@@ -131,6 +131,9 @@ python -m http.server 8080
 ├── index.html   # 页面结构、SVG 图标与全部对话框
 ├── script.js    # 全部逻辑（IIFE 封装：模型 → 渲染 → 历史 → 自动存档）
 ├── style.css    # 浅色 / 深色主题与全部样式
+├── favicon.svg  # 品牌标徽（矢量主图，现代浏览器优先使用）
+├── favicon.ico / favicon-16.png / favicon-32.png  # 标徽位图回退
+├── apple-touch-icon.png  # iOS 主屏图标（180×180）
 ├── README.md
 ├── .nojekyll    # GitHub Pages 直接托管静态文件
 └── .gitignore
