@@ -183,6 +183,12 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 .rail-btn .ic { width: 18px; height: 18px; }
 .rail-btn:hover { background: var(--bg-hover); color: var(--primary); }
 .rail-btn.active { background: var(--primary-soft); color: var(--primary); border-color: var(--primary-ring); font-weight: 600; }
+.rail-color-card { position: relative; width: 56px; flex-shrink: 0; display: flex; flex-direction: column; gap: 2px; padding: 3px 0; }
+.rail-color-slot { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; width: 100%; min-height: 32px; padding: 3px 0; border: 1px solid transparent; border-radius: var(--radius); background: transparent; color: var(--text-2); font-size: 10px; cursor: pointer; }
+.rail-color-slot:hover { background: var(--bg-hover); color: var(--primary); }
+.rail-color-slot.active { border-color: var(--primary-ring); background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+.rail-color-chip { display: block; width: 30px; height: 10px; border-radius: 2px; border: 1px solid var(--border-strong); background: #4f6bff; }
+.bucket-color-hidden { position: absolute; left: 0; top: 0; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; }
 
 /* ==================== 画布舞台 / 标尺 ==================== */
 .stage { flex: 1; min-width: 0; display: grid; grid-template-columns: var(--ruler-size) 1fr; grid-template-rows: var(--ruler-size) 1fr; background: var(--bg-stage); position: relative; }
@@ -223,19 +229,30 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 .snap-guide { position: absolute; background: #ff3d9a; box-shadow: 0 0 4px rgba(255, 61, 154, .5); }
 .snap-guide.v { width: 1px; top: 0; bottom: 0; }
 .snap-guide.h { height: 1px; left: 0; right: 0; }
-.measure-tag { position: absolute; display: flex; align-items: center; padding: 2px 6px; border-radius: 4px; background: var(--primary); color: #fff; font-size: 10px; white-space: nowrap; transform: translate(-50%, -50%); box-shadow: var(--shadow-sm); pointer-events: auto; user-select: none; }
-.measure-num { cursor: text; padding: 0 2px; margin: 0 -1px; border-radius: 3px; font-variant-numeric: tabular-nums; outline: none; transition: background-color .12s ease; }
-.measure-num:hover, .measure-num:focus-visible { background: rgba(255, 255, 255, .26); }
-.measure-num.editing { background: rgba(255, 255, 255, .18); }
-.measure-sep { opacity: .85; }
+/* ---------- 尺寸标注 HUD：扁平药丸标签 + 尺寸线 ---------- */
+.measure-tag { position: absolute; display: flex; align-items: center; gap: 3px; height: 19px; padding: 0 6px 0 5px; border-radius: 6px; background: var(--primary); color: #fff; font-size: 11px; font-weight: 600; line-height: 1; letter-spacing: .2px; white-space: nowrap; transform: translate(-50%, -50%); box-shadow: 0 1px 2px rgba(16, 22, 40, .2), 0 0 0 1px rgba(255, 255, 255, .18) inset; pointer-events: auto; user-select: none; font-variant-numeric: tabular-nums; transition: box-shadow .12s ease; }
+.measure-tag:hover { box-shadow: 0 3px 10px rgba(16, 22, 40, .26), 0 0 0 1px rgba(255, 255, 255, .26) inset; z-index: 2; }
+.measure-key { font-size: 8.5px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase; opacity: .78; }
+.measure-num { cursor: text; padding: 1px 2px; border-radius: 4px; outline: none; text-decoration: underline dotted rgba(255, 255, 255, .5); text-underline-offset: 2px; transition: background-color .12s ease; }
+.measure-num:hover, .measure-num:focus-visible { background: rgba(255, 255, 255, .3); text-decoration-color: transparent; }
+.measure-num.editing { background: rgba(255, 255, 255, .22); text-decoration-color: transparent; }
+.measure-sep { opacity: .8; font-weight: 500; }
 .measure-input { border: 0; padding: 0; margin: 0; min-width: 3ch; background: transparent; color: inherit; font: inherit; text-align: center; outline: none; user-select: text; }
 .measure-tag.gap { background: var(--measure-gap); }
 .measure-tag.gdist { background: var(--measure-guide); }
 .measure-tag.adist { background: var(--measure-align); }
+.measure-tag.adist.aligned { background: var(--accent); }
+.measure-tag.margin { background: var(--bg-surface); color: var(--primary); border: 1px solid var(--primary-ring); box-shadow: var(--shadow-sm); font-weight: 600; }
+.measure-tag.margin .measure-key { color: var(--text-3); opacity: 1; }
+.measure-tag.margin .measure-num { text-decoration-color: var(--primary-ring); }
+.measure-tag.margin .measure-num:hover { background: var(--primary-soft); }
 .measure-lines { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
 .measure-lines path { stroke: var(--measure-gap); stroke-width: 1; fill: none; filter: drop-shadow(0 0 1px var(--line-halo)); }
+.measure-lines.size-lines path { stroke: var(--primary); }
+.measure-lines.size-lines.ext path { opacity: .4; stroke-dasharray: 2 2; }
+.measure-lines.margin-lines path { stroke: var(--primary); opacity: .55; stroke-dasharray: 3 3; }
 .measure-lines.guide-lines path { stroke: var(--measure-guide); }
-.measure-lines.align-lines path { stroke: var(--measure-align); }
+.measure-lines.align-lines path { stroke: var(--measure-align); stroke-dasharray: 4 3; }
 .drop-hint { position: absolute; inset: 18px; z-index: 8; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 10px; border: 2px dashed var(--primary); border-radius: 14px; background: var(--primary-soft); color: var(--primary); font-size: 14px; font-weight: 600; pointer-events: none; }
 .drop-hint .ic { width: 34px; height: 34px; }
 .viewport.drag-over .drop-hint { display: flex; }
@@ -290,16 +307,53 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 .pivot-handle.custom { border-color: var(--danger); }
 .pivot-handle.custom::before, .pivot-handle.custom::after { background: var(--danger); }
 
-/* 曲线控制点与切线 */
+/* 曲线：路径 + 节点 + 控制柄 + 切线 */
 .curve-svg, .stroke-overlay { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .curve-guides { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; display: none; z-index: 9998; }
 .canvas-element.active.solo .curve-guides { display: block; }
-.curve-handle { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; display: none; cursor: grab; z-index: 10002; border-radius: 50%; background: var(--primary); border: 2px solid var(--bg-surface); box-shadow: var(--shadow-sm); touch-action: none; }
-.curve-handle[data-cp="cx1"], .curve-handle[data-cp="cx2"] { background: var(--bg-surface); border: 2px solid var(--warn); border-radius: 3px; transform: rotate(45deg); }
-.curve-handle:hover { box-shadow: 0 0 0 4px var(--primary-ring), var(--shadow-sm); }
-.curve-handle.dragging { cursor: grabbing; }
-.canvas-element.active.solo .curve-handle { display: block; }
-.canvas-element[data-locked="true"] .curve-handle, .canvas-element[data-locked="true"] .curve-guides { display: none !important; }
+.curve-guides line { stroke: var(--warn); stroke-width: 1; stroke-dasharray: 3 3; opacity: .9; }
+.curve-guides line.dim { opacity: .38; }
+.curve-nodes { position: absolute; inset: 0; display: none; pointer-events: none; }
+.canvas-element.active.solo .curve-nodes { display: block; }
+.curve-node { position: absolute; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-radius: 2.5px; background: var(--bg-surface); border: 2px solid var(--primary); box-shadow: var(--shadow-sm); cursor: grab; z-index: 10003; touch-action: none; pointer-events: auto; }
+.curve-node:hover { box-shadow: 0 0 0 4px var(--primary-ring), var(--shadow-sm); }
+.curve-node.sel { background: var(--primary); border-color: var(--bg-surface); box-shadow: 0 0 0 2px var(--primary-ring), var(--shadow-sm); }
+.curve-node.dragging { cursor: grabbing; }
+.curve-ctrl { position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; background: var(--bg-surface); border: 1.5px solid var(--warn); box-shadow: var(--shadow-sm); cursor: crosshair; z-index: 10002; touch-action: none; display: none; pointer-events: auto; }
+.curve-ctrl.on { display: block; }
+.curve-ctrl:hover { box-shadow: 0 0 0 4px rgba(247, 144, 9, .24), var(--shadow-sm); }
+.curve-ctrl.dragging { cursor: grabbing; }
+.curve-ctrl.ghost { opacity: .35; }
+.canvas-element[data-locked="true"] .curve-node,
+.canvas-element[data-locked="true"] .curve-ctrl,
+.canvas-element[data-locked="true"] .curve-guides,
+.canvas-element[data-locked="true"] .curve-nodes { display: none !important; }
+
+/* 钢笔工具草稿层（视口坐标） */
+.pen-layer { position: absolute; inset: 0; pointer-events: none; z-index: 7; overflow: hidden; }
+.pen-layer svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.pen-layer .pen-path { fill: none; stroke: var(--primary); stroke-width: 1.6; stroke-linecap: round; filter: drop-shadow(0 0 1px var(--line-halo)); }
+.pen-layer .pen-rubber { fill: none; stroke: var(--primary); stroke-width: 1.2; stroke-dasharray: 4 4; opacity: .65; }
+.pen-layer .pen-tangent { stroke: var(--warn); stroke-width: 1; stroke-dasharray: 3 3; opacity: .9; }
+.pen-layer .pen-node { fill: var(--bg-surface); stroke: var(--primary); stroke-width: 1.8; }
+.pen-layer .pen-node.first { fill: var(--accent); stroke: var(--bg-surface); }
+.pen-layer .pen-handle { fill: var(--bg-surface); stroke: var(--warn); stroke-width: 1.5; }
+.viewport.tool-pen { cursor: crosshair; }
+.viewport.tool-bucket { cursor: crosshair; }
+/* 悬停预览：填充目标高亮内部区域，描边目标高亮轮廓，颜色即当前色槽 */
+.viewport.tool-bucket .canvas-element[data-bucket-target="fill"] {
+  outline: 2px solid var(--bucket-hi, var(--primary)); outline-offset: 2px;
+}
+.viewport.tool-bucket .canvas-element[data-bucket-target="fill"]::after {
+  content: ''; position: absolute; inset: 0; z-index: 9; pointer-events: none;
+  background: var(--bucket-hi-fade, transparent);
+}
+.viewport.tool-bucket .canvas-element[data-bucket-target="stroke"] {
+  outline: 3px solid var(--bucket-hi, var(--primary)); outline-offset: 0;
+}
+.bucket-hover { position: fixed; z-index: 80; display: none; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border-strong); background: var(--bg-surface); box-shadow: 0 4px 14px rgba(0,0,0,.18); font-size: 11px; color: var(--text); white-space: nowrap; pointer-events: none; }
+.bucket-hover.on { display: flex; }
+.bucket-hover-chip { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--border-strong); background: #4f6bff; }
 
 /* 旋转角度参考线（屏幕坐标，覆盖在视口上） */
 .rotate-guide { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
@@ -501,7 +555,15 @@ select:focus { border-color: var(--primary); }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .toast.error { background: #b3262e; }
 .toast.success { background: #137a4c; }
-#sizeTooltip { position: fixed; display: none; background: var(--bg-tooltip); color: #fff; padding: 4px 8px; border-radius: 5px; font-size: 11px; pointer-events: none; z-index: 20000; box-shadow: var(--shadow-md); }
+#sizeTooltip { position: fixed; display: none; background: var(--bg-tooltip); color: #fff; padding: 5px 9px; border-radius: 7px; font-size: 11px; font-weight: 600; letter-spacing: .3px; font-variant-numeric: tabular-nums; pointer-events: none; z-index: 20000; box-shadow: var(--shadow-md); }
+
+/* ==================== 曲线节点操作面板 ==================== */
+.curve-node-block { margin-top: 12px; padding-top: 4px; border-top: 1px dashed var(--border); }
+.curve-node-block .section-label { display: flex; align-items: center; justify-content: space-between; }
+.curve-node-block .section-label .card-sub { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--text-3); }
+.node-ops { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.node-ops .text-btn { padding: 5px 4px; font-size: 10.5px; }
+.node-ops .text-btn.active { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
 
 /* ==================== 裁剪器 ==================== */
 .crop-stage { position: relative; width: 100%; height: 320px; background: #171a21; border-radius: var(--radius); overflow: hidden; display: flex; align-items: center; justify-content: center; user-select: none; touch-action: none; }

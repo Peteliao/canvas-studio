@@ -39,6 +39,10 @@
   <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h15M14 7l5 5-5 5"/></symbol>
   <symbol id="i-line" viewBox="0 0 24 24"><path d="M3 12h18"/></symbol>
   <symbol id="i-curve" viewBox="0 0 24 24"><path d="M4 18C7 5 17 19 20 6"/><circle cx="4" cy="18" r="1.6"/><circle cx="20" cy="6" r="1.6"/></symbol>
+  <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 3l7 7-9.5 9.5L3 21l1.5-6.5z"/><path d="M9.5 8.5l6 6"/><circle cx="12" cy="3" r="1.4"/></symbol>
+  <symbol id="i-bucket" viewBox="0 0 24 24"><path d="M5 10l7-7 8 8-7 7zM5 10l8 8M11 4l6 6"/><path d="M18.5 15.5c1.3 1.8 2 2.8 2 3.5a2 2 0 0 1-4 0c0-.7.7-1.7 2-3.5z"/></symbol>
+  <symbol id="i-node" viewBox="0 0 24 24"><path d="M4 19C4 9 20 15 20 5"/><rect x="2" y="17" width="4" height="4" rx=".6"/><rect x="18" y="3" width="4" height="4" rx=".6"/><circle cx="12" cy="12" r="1.6"/></symbol>
+  <symbol id="i-corner" viewBox="0 0 24 24"><path d="M3 19h8v-8"/><rect x="11" y="11" width="4" height="4" rx=".6"/><path d="M21 5l-6 6" stroke-dasharray="2.5 2.5"/></symbol>
   <symbol id="i-pivot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6.5"/><path d="M12 2v4.5M12 17.5V22M2 12h4.5M17.5 12H22"/><circle cx="12" cy="12" r="1.2"/></symbol>
   <symbol id="i-font" viewBox="0 0 24 24"><path d="M5 18 10 6h4l5 12M7 14h10"/></symbol>
   <symbol id="i-image" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="1"/><circle cx="9" cy="10" r="1.5"/><path d="M5 17l5-5 4 4 3-3 2 2"/></symbol>
@@ -108,7 +112,7 @@
     <div class="brand">
       <span class="brand-mark"><svg class="ic"><use href="#i-sparkle"/></svg></span>
       <span class="brand-name">Canvas <b>Studio</b></span>
-      <span class="brand-version">v12</span>
+      <span class="brand-version">v13</span>
     </div>
 
     <nav class="menubar" aria-label="主菜单">
@@ -149,7 +153,7 @@
           <button data-act="toggleRulers"><svg class="ic"><use href="#i-ruler"/></svg>显示标尺</button>
           <button data-act="toggleGuideLines" title="辅助线：从标尺拖出创建，可旋转/删除，与物件双向测距"><svg class="ic"><use href="#i-guide"/></svg>显示辅助线</button>
           <button data-act="toggleSnap"><svg class="ic"><use href="#i-magnet"/></svg>智能吸附</button>
-          <button data-act="toggleGuides" title="尺寸标注：蓝=画布边距，玫红=物件间距（负值=重叠），橙=边缘对齐差（0=对齐），青=辅助线距离；点击数值可直接编辑"><svg class="ic"><use href="#i-move"/></svg>尺寸标注</button>
+          <button data-act="toggleGuides" title="尺寸标注：蓝=自身尺寸与画布边距，玫红=相邻物件间距（负值=重叠），橙=边缘对齐差（0=对齐），青=辅助线距离；点击数值可直接编辑"><svg class="ic"><use href="#i-move"/></svg>尺寸标注</button>
           <div class="menu-sep"></div>
           <button data-act="toggleTheme"><svg class="ic"><use href="#i-moon"/></svg>切换主题</button>
           <button data-act="showShortcuts"><svg class="ic"><use href="#i-keyboard"/></svg>快捷键说明 <kbd>?</kbd></button>
@@ -277,7 +281,17 @@
         <button class="rail-btn" data-act="addShape" data-arg="star" title="插入五角星"><svg class="ic"><use href="#i-star"/></svg><span>星形</span></button>
         <button class="rail-btn" data-act="addShape" data-arg="arrow" title="插入箭头"><svg class="ic"><use href="#i-arrow"/></svg><span>箭头</span></button>
         <button class="rail-btn" data-act="addShape" data-arg="line" title="插入线条"><svg class="ic"><use href="#i-line"/></svg><span>线条</span></button>
-        <button class="rail-btn" data-act="addShape" data-arg="curve" title="插入曲线 (C) — 拖动控制点调整弧度"><svg class="ic"><use href="#i-curve"/></svg><span>曲线</span></button>
+        <button class="rail-btn" id="railPen" data-act="setTool" data-arg="pen" title="钢笔工具 (P)：点击加角点，按住拖拽画圆滑曲线；Alt+点击锚点或 Alt+落新点让下一段变直线；点回起点闭合，Enter 结束"><svg class="ic"><use href="#i-pen"/></svg><span>钢笔</span></button>
+        <button class="rail-btn" id="railBucket" data-act="setTool" data-arg="bucket" title="颜料桶 (B)：点内部改填充、点边缘改描边；按住拖动连续上色，Shift 强制描边，Alt+点击吸色"><svg class="ic"><use href="#i-bucket"/></svg><span>填色</span></button>
+        <div class="rail-color-card" id="bucketColorCard">
+          <button class="rail-color-slot active" id="bucketFillSlot" title="填充色：点此选色" aria-label="填充色">
+            <span class="rail-color-chip" id="bucketFillChip" aria-hidden="true"></span><span>填充</span>
+          </button>
+          <button class="rail-color-slot" id="bucketStrokeSlot" title="描边色：点此选色" aria-label="描边色">
+            <span class="rail-color-chip" id="bucketStrokeChip" aria-hidden="true"></span><span>描边</span>
+          </button>
+          <input type="color" class="bucket-color-hidden" id="bucketColorInput" value="#4f6bff" tabindex="-1" aria-hidden="true">
+        </div>
         <button class="rail-btn" id="railText" data-act="setTool" data-arg="text" title="文本工具 (T)：在画布点击或拖拽框创建文本"><svg class="ic"><use href="#i-font"/></svg><span>文本</span></button>
         <button class="rail-btn" data-act="addImage" title="插入图片"><svg class="ic"><use href="#i-image"/></svg><span>图片</span></button>
       </div>
@@ -295,10 +309,17 @@
         </div>
         <div class="guide-layer" id="guideLayer"></div>
         <div class="guides-layer" id="guidesLayer"></div>
+        <div class="pen-layer" id="penLayer"></div>
         <div class="measure-layer" id="measureLayer"></div>
         <div class="drop-hint" id="dropHint"><svg class="ic"><use href="#i-upload"/></svg><span>松开以导入图片 / 文本 / 项目文件</span></div>
       </div>
     </main>
+
+    <!-- 颜料桶悬停提示：显示当前会改填充还是描边，以及对应颜色 -->
+    <div class="bucket-hover" id="bucketHover" aria-hidden="true">
+      <span class="bucket-hover-chip" id="bucketHoverChip"></span>
+      <span id="bucketHoverText">填充</span>
+    </div>
 
     <!-- 右侧检查器 -->
     <aside class="inspector" id="inspector" aria-label="检查器">
@@ -355,6 +376,7 @@
             <!-- 外观：填充 -->
             <section class="panel-card" id="appearanceBlock">
               <div class="card-head"><span><svg class="ic"><use href="#i-palette"/></svg> 填充</span></div>
+              <div id="shapeFillControls">
               <div class="control-row">
                 <select id="elBgType" aria-label="填充模式">
                   <option value="solid">纯色填充</option>
@@ -393,6 +415,42 @@
                   <input type="number" id="elGradPosY" value="50" min="0" max="100" class="num-mini" title="Y %" aria-label="渐变中心 Y">
                   <span class="unit">%</span>
                 </div>
+              </div>
+              </div>
+              <div id="curveFillControls" style="display:none;">
+                <label class="switch-row"><input type="checkbox" id="curveFillEnabled"><span>填充闭合路径</span></label>
+                <div class="control-row">
+                  <span class="control-label">模式</span>
+                  <select id="curveFillMode" aria-label="曲线填充模式">
+                    <option value="solid">纯色填充</option>
+                    <option value="linear">线性渐变</option>
+                    <option value="radial">椭圆渐变</option>
+                    <option value="conic">圆锥渐变</option>
+                  </select>
+                </div>
+                <div class="control-row" id="curveFillSolidRow">
+                  <span class="control-label">颜色</span>
+                  <input type="color" id="curveFillColor" value="#CCCCCC" data-keepfocus="1" aria-label="曲线填充颜色">
+                  <span class="value-tag" id="curveFillHex">#CCCCCC</span>
+                </div>
+                <div id="curveFillGradControls" style="display:none;">
+                  <div class="control-row"><span class="control-label">起点</span><input type="color" id="curveFillGradStart" value="#ffffff" aria-label="曲线渐变起点色"></div>
+                  <div class="control-row"><span class="control-label">终点</span><input type="color" id="curveFillGradEnd" value="#dddddd" aria-label="曲线渐变终点色"></div>
+                  <div class="control-row"><span class="control-label">角度</span><input type="range" id="curveFillAngle" min="0" max="360" value="90" aria-label="曲线渐变角度"><span class="value-tag" id="curveFillAngleVal">90°</span></div>
+                </div>
+                <div class="control-row">
+                  <span class="control-label">透明度</span>
+                  <input type="range" id="curveFillAlpha" min="0" max="100" value="100" aria-label="曲线填充透明度">
+                  <span class="value-tag" id="curveFillAlphaVal">100%</span>
+                </div>
+                <div class="section-label" style="margin-top:10px;">描边</div>
+                <label class="switch-row"><input type="checkbox" id="curveStrokeEnabled"><span>显示描边</span></label>
+                <div class="control-row">
+                  <span class="control-label">颜色</span>
+                  <input type="color" id="curveStrokeColor" value="#1C2230" data-keepfocus="1" aria-label="曲线描边颜色">
+                  <span class="value-tag" id="curveStrokeHex">#1C2230</span>
+                </div>
+                <p class="hint-text">填充与描边分别设置；粗细、实线 / 虚线 / 点线在下方「曲线样式」面板。颜料桶 (B)：点内部改填充、点边缘改描边，Shift 强制描边</p>
               </div>
               <div class="control-row" style="margin-top:10px;">
                 <span class="control-label">不透明度</span>
@@ -470,6 +528,24 @@
                   <button class="line-style-btn" data-act="setWavyDash" data-arg="dashed" role="radio" aria-checked="false" title="虚线波浪"><svg class="ls-preview" viewBox="0 0 44 12" aria-hidden="true"><path d="M2 6Q7 1 12 6T22 6T32 6T42 6" stroke-dasharray="6 4"/></svg><span>虚线</span></button>
                   <button class="line-style-btn" data-act="setWavyDash" data-arg="dotted" role="radio" aria-checked="false" title="点线波浪"><svg class="ls-preview" viewBox="0 0 44 12" aria-hidden="true"><path d="M2 6Q7 1 12 6T22 6T32 6T42 6" stroke-dasharray="0.5 6" stroke-linecap="round"/></svg><span>点线</span></button>
                 </div>
+              </div>
+
+              <!-- 节点编辑（仅曲线） -->
+              <div class="curve-node-block" id="curveNodeBlock" style="display:none;">
+                <div class="section-label">节点编辑 <span class="card-sub" id="curveNodeInfo"></span></div>
+                <div class="node-ops">
+                  <button class="text-btn" data-act="curveOp" data-arg="add" title="在当前节点之后插入一个节点（也可双击线段）">插入节点</button>
+                  <button class="text-btn" data-act="curveOp" data-arg="del" title="删除当前节点（也可双击节点）">删除节点</button>
+                  <button class="text-btn" data-act="curveOp" data-arg="smooth" title="把当前节点转为平滑节点，两侧控制柄保持共线">平滑</button>
+                  <button class="text-btn" data-act="curveOp" data-arg="cusp" title="把当前节点转为尖角节点，两侧控制柄可独立变化">尖角</button>
+                  <button class="text-btn" data-act="curveOp" data-arg="reverse" title="反转路径方向">反转</button>
+                  <button class="text-btn" data-act="curveOp" data-arg="fit" title="把元素边框收紧到路径实际范围">适配边框</button>
+                </div>
+                <div class="row-gap">
+                  <button class="text-btn" id="btnCurveClose" data-act="curveOp" data-arg="close" title="首尾相连形成闭合路径">闭合路径</button>
+                  <button class="text-btn" id="btnCurveOpen" data-act="curveOp" data-arg="open" title="断开首尾连接">断开路径</button>
+                </div>
+                <p class="hint-text" id="curveNodeHint">拖拽方块移动节点，拖拽圆形控制柄调整弧度（Alt 断开对称，Shift 15° 吸附）</p>
               </div>
             </section>
 

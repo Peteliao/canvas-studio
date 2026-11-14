@@ -4,7 +4,8 @@
 'use strict';
 
 /* ==================== 1. 常量 ==================== */
-const VERSION = 3;
+const VERSION = 4;
+const COMPAT_VERSIONS = [2, 3, 4];   // v2 旧格式 / v3 单段曲线 / v4 多节点贝塞尔
 const STORAGE_KEY = 'canvas_autosave_v2';
 const LEGACY_KEY = 'canvas_autosave_v1';
 const SETTINGS_KEY = 'canvas_studio_settings_v3';
@@ -67,6 +68,9 @@ const state = {
     hiddenAssetsDirty: new Set(),
     // ---- V12 扩展状态 ----
     tool: 'select',
+    bucketSlot: 'fill',          // 颜料桶最近编辑的色槽：fill | stroke
+    nodeSel: null,               // 曲线节点选择 { id, i }
+    pen: null,                   // 钢笔草稿 { nodes:[{x,y,ix,iy,ox,oy,t}], closed, cursor }
     settings: null,              // 主题 / 吸附 / 网格 / 标尺 / 标注 / 色板 / 最近颜色
     projectId: null,
     projectName: '未命名设计',
@@ -103,6 +107,7 @@ const finite = (v, d) => {
 const uid = prefix => prefix + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const deepCopy = o => JSON.parse(JSON.stringify(o));
 const round2 = v => Math.round(v * 100) / 100;
+const round3 = v => Math.round(v * 1000) / 1000;
 const validColor = (v, d) => (typeof v === 'string' && HEX_RE.test(v) ? v : d);
 
 function iconEl(name, cls) {
@@ -319,7 +324,8 @@ function loadSettings() {
     const s = {
         theme: 'light', contrast: 'normal', snap: true, grid: false, rulers: true,
         guides: true, guideLines: true, gridSize: 20, alignBase: 'selection', inspectorVisible: true, inspectorFolded: false,
-        activeTab: 'design', recentColors: [], palette: [], projectId: null, projectName: '未命名设计'
+        activeTab: 'design', recentColors: [], palette: [], projectId: null, projectName: '未命名设计',
+        bucketFillColor: '#4f6bff', bucketStrokeColor: '#1c2230'
     };
     try {
         const raw = localStorage.getItem(SETTINGS_KEY);
@@ -331,6 +337,8 @@ function loadSettings() {
             if (Array.isArray(o.palette)) s.palette = o.palette.filter(c => HEX_RE.test(c)).slice(0, 32);
         }
     } catch (e) { /* 使用默认设置 */ }
+    if (!HEX_RE.test(s.bucketFillColor)) s.bucketFillColor = '#4f6bff';
+    if (!HEX_RE.test(s.bucketStrokeColor)) s.bucketStrokeColor = '#1c2230';
     return s;
 }
 function useColor(color) {
@@ -340,6 +348,7 @@ function useColor(color) {
     state.settings.recentColors = list.slice(0, 16);
     saveSettings();
     renderSwatches();
+    syncBucketSwatch();
 }
 
 /* ==================== 5. 模型与 schema 校验 ==================== */
@@ -403,19 +412,107 @@ function makeLine(raw) {
         dash: ['solid', 'dashed', 'dotted'].includes(o.dash) ? o.dash : 'solid'
     };
 }
-/** 贝塞尔曲线：四个点均以元素宽高的比例存储，缩放元素时曲线随之缩放 */
-function makeCurve(raw) {
+/** 贝塞尔路径：节点以元素宽高的比例存储，缩放元素时路径随之缩放
+ *  node = { x, y, ix, iy, ox, oy, t }：锚点 + 入/出控制柄（绝对比例坐标），t = 节点类型
+ *  控制柄与锚点重合表示该侧为直线段，支持任意节点数、开放/闭合路径 */
+const MAX_CURVE_NODES = 200;
+const CURVE_NODE_TYPES = ['smooth', 'cusp'];
+function makeCurveNode(raw) {
     const o = raw && typeof raw === 'object' ? raw : {};
-    const pt = (v, d) => clamp(finite(v, d), -3, 4);
+    const pt = (v, d) => clamp(round3(finite(v, d)), -3, 4);
+    const x = pt(o.x, 0), y = pt(o.y, 0);
     return {
-        x1: pt(o.x1, 0.02), y1: pt(o.y1, 0.85),
-        cx1: pt(o.cx1, 0.28), cy1: pt(o.cy1, 0.05),
-        cx2: pt(o.cx2, 0.72), cy2: pt(o.cy2, 0.95),
-        x2: pt(o.x2, 0.98), y2: pt(o.y2, 0.15)
+        x, y,
+        ix: pt(o.ix, x), iy: pt(o.iy, y),
+        ox: pt(o.ox, x), oy: pt(o.oy, y),
+        t: CURVE_NODE_TYPES.includes(o.t) ? o.t : 'smooth'
     };
 }
+function makeCurve(raw) {
+    const o = raw && typeof raw === 'object' ? raw : {};
+    if (Array.isArray(o.nodes) && o.nodes.length >= 2) {
+        return { nodes: o.nodes.slice(0, MAX_CURVE_NODES).map(makeCurveNode), closed: !!o.closed,
+            filled: !!o.filled, strokeOn: o.strokeOn !== false };
+    }
+    // 旧版单段贝塞尔（四点）→ 两节点路径，形状完全一致
+    const pt = (v, d) => clamp(round3(finite(v, d)), -3, 4);
+    const x1 = pt(o.x1, 0.02), y1 = pt(o.y1, 0.85);
+    const cx1 = pt(o.cx1, 0.28), cy1 = pt(o.cy1, 0.05);
+    const cx2 = pt(o.cx2, 0.72), cy2 = pt(o.cy2, 0.95);
+    const x2 = pt(o.x2, 0.98), y2 = pt(o.y2, 0.15);
+    return {
+        nodes: [
+            { x: x1, y: y1, ix: x1, iy: y1, ox: cx1, oy: cy1, t: 'cusp' },
+            { x: x2, y: y2, ix: cx2, iy: cy2, ox: x2, oy: y2, t: 'cusp' }
+        ],
+        closed: false,
+        filled: false,
+        strokeOn: true
+    };
+}
+/** 仅「闭合 + 已启用填充」才绘制填充；开放路径只描边，避免隐式闭合产生意外色块 */
+function curveFillOn(el) {
+    return !!(el && el.type === 'curve' && el.curve && el.curve.closed && el.curve.filled);
+}
+/** 曲线描边是否显示（旧存档无 strokeOn 字段时默认显示） */
+function curveStrokeOn(el) {
+    return !!(el && el.type === 'curve' && el.curve && el.curve.strokeOn !== false);
+}
+/** 单段路径：两侧控制柄都贴着锚点即输出直线，否则输出三次贝塞尔 */
+function curveSegD(a, b, w, h) {
+    const x1 = a.x * w, y1 = a.y * h, x2 = b.x * w, y2 = b.y * h;
+    const c1x = a.ox * w, c1y = a.oy * h, c2x = b.ix * w, c2y = b.iy * h;
+    const flat = Math.abs(c1x - x1) < 1e-6 && Math.abs(c1y - y1) < 1e-6 &&
+        Math.abs(c2x - x2) < 1e-6 && Math.abs(c2y - y2) < 1e-6;
+    if (flat) return ` L ${round2(x2)} ${round2(y2)}`;
+    return ` C ${round2(c1x)} ${round2(c1y)}, ${round2(c2x)} ${round2(c2y)}, ${round2(x2)} ${round2(y2)}`;
+}
 function curvePathD(c, w, h) {
-    return `M ${round2(c.x1 * w)} ${round2(c.y1 * h)} C ${round2(c.cx1 * w)} ${round2(c.cy1 * h)}, ${round2(c.cx2 * w)} ${round2(c.cy2 * h)}, ${round2(c.x2 * w)} ${round2(c.y2 * h)}`;
+    const n = c && c.nodes;
+    if (!n || !n.length) return '';
+    let d = `M ${round2(n[0].x * w)} ${round2(n[0].y * h)}`;
+    for (let i = 1; i < n.length; i++) d += curveSegD(n[i - 1], n[i], w, h);
+    if (c.closed && n.length > 1) d += curveSegD(n[n.length - 1], n[0], w, h) + ' Z';
+    return d;
+}
+/** 曲线段的端点（像素坐标），含起止控制点，用于分割与命中测试 */
+function curveSegPts(nodes, a, b, w, h) {
+    const A = nodes[a], B = nodes[b];
+    return [
+        { x: A.x * w, y: A.y * h },
+        { x: A.ox * w, y: A.oy * h },
+        { x: B.ix * w, y: B.iy * h },
+        { x: B.x * w, y: B.y * h }
+    ];
+}
+function cubicAt(p0, p1, p2, p3, t) {
+    const m = 1 - t;
+    const a = m * m * m, b = 3 * m * m * t, c = 3 * m * t * t, d = t * t * t;
+    return { x: a * p0.x + b * p1.x + c * p2.x + d * p3.x, y: a * p0.y + b * p1.y + c * p2.y + d * p3.y };
+}
+/** 把一段贝塞尔在 t 处切开，返回左右两段（控制点列表），用于插入节点 */
+function splitCubic(pts, t) {
+    const lerp = (a, b) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    const [p0, p1, p2, p3] = pts;
+    const p01 = lerp(p0, p1), p12 = lerp(p1, p2), p23 = lerp(p2, p3);
+    const p012 = lerp(p01, p12), p123 = lerp(p12, p23);
+    const mid = lerp(p012, p123);
+    return { left: [p0, p01, p012, mid], right: [mid, p123, p23, p3], mid };
+}
+/** 节点是否带控制柄（用于判断直线/曲线连接） */
+function curveNodeHasIn(n) { return Math.abs(n.ix - n.x) > 1e-6 || Math.abs(n.iy - n.y) > 1e-6; }
+function curveNodeHasOut(n) { return Math.abs(n.ox - n.x) > 1e-6 || Math.abs(n.oy - n.y) > 1e-6; }
+/** 路径在世界坐标（相对元素）中的范围，含控制柄，用于“适配边框” */
+function curveLocalBox(el) {
+    const c = el.curve, w = el.w, h = el.h;
+    let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+    const put = (x, y) => { l = Math.min(l, x); t = Math.min(t, y); r = Math.max(r, x); b = Math.max(b, y); };
+    c.nodes.forEach(n => {
+        put(n.x * w, n.y * h);
+        put(n.ix * w, n.iy * h);
+        put(n.ox * w, n.oy * h);
+    });
+    return { left: l, top: t, right: r, bottom: b, w: Math.max(1, r - l), h: Math.max(1, b - t) };
 }
 function lineDashArray(ln) {
     if (ln.style === 'dashed') return `${ln.width * 3} ${ln.width * 2}`;
@@ -492,8 +589,8 @@ function validateAssets(raw) {
 /** 统一入口：自动保存快照、撤销历史条目、项目文件都经过这里 */
 function validateProject(raw) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('项目数据格式不正确');
-    // 兼容 v2 存档，自动迁移到 v3（补齐新增字段）
-    if (raw.version !== VERSION && raw.version !== 2) throw new Error('项目版本不匹配（需要 v' + VERSION + '）');
+    // 兼容旧存档：v2 补齐图层元数据，v3 的单段曲线自动迁移为多节点路径
+    if (!COMPAT_VERSIONS.includes(raw.version)) throw new Error('项目版本不匹配（需要 v' + VERSION + '）');
     const c = raw.canvas;
     if (!c || typeof c !== 'object') throw new Error('缺少画布设置');
     const w = clamp(finite(c.w, 800), 1, MAX_CANVAS_SIDE);
@@ -714,6 +811,8 @@ function buildNode(el) {
         const cv = document.createElementNS(SVG_NS, 'svg');
         cv.setAttribute('class', 'curve-svg');
         cv.setAttribute('aria-hidden', 'true');
+        const defs = document.createElementNS(SVG_NS, 'defs');
+        cv.appendChild(defs);
         const path = document.createElementNS(SVG_NS, 'path');
         path.setAttribute('fill', 'none');
         cv.appendChild(path);
@@ -721,22 +820,10 @@ function buildNode(el) {
         const guides = document.createElementNS(SVG_NS, 'svg');
         guides.setAttribute('class', 'curve-guides');
         guides.setAttribute('aria-hidden', 'true');
-        ['l1', 'l2'].forEach(k => {
-            const ln = document.createElementNS(SVG_NS, 'line');
-            ln.setAttribute('stroke', 'var(--warn)');
-            ln.setAttribute('stroke-width', '1');
-            ln.setAttribute('stroke-dasharray', '4 3');
-            ln.dataset.g = k;
-            guides.appendChild(ln);
-        });
         d.appendChild(guides);
-        ['x1', 'cx1', 'cx2', 'x2'].forEach(cp => {
-            const h = document.createElement('div');
-            h.className = 'curve-handle';
-            h.dataset.cp = cp;
-            h.title = cp === 'x1' ? '起点' : cp === 'x2' ? '终点' : '弧度控制点';
-            d.appendChild(h);
-        });
+        const holder = document.createElement('div');
+        holder.className = 'curve-nodes';
+        d.appendChild(holder);
     }
     if (el.type === 'text') {
         const t = document.createElement('div');
@@ -928,37 +1015,90 @@ function syncNode(el, d) {
         ov.style.filter = f || '';
     }
 }
+/** 同步曲线路径、节点方块、控制柄与切线。节点数量变化时重建手柄 DOM */
 function syncCurveNode(el, d, h) {
     const c = el.curve, ln = el.line, w = el.w;
     const cv = d.querySelector('.curve-svg');
     if (cv) {
         cv.setAttribute('viewBox', `0 0 ${w} ${h}`);
         cv.setAttribute('preserveAspectRatio', 'none');
+        const fd = curveFillOn(el) ? fillDefs('cf_' + el.id, el.fill) : null;
+        const defs = cv.querySelector('defs');
+        if (defs) defs.innerHTML = fd ? fd.def : '';
         const path = cv.querySelector('path');
         path.setAttribute('d', curvePathD(c, w, h));
+        path.setAttribute('fill', fd ? fd.ref : 'none');
         path.setAttribute('stroke', ln.color);
-        path.setAttribute('stroke-width', String(ln.width));
+        path.setAttribute('stroke-width', String(curveStrokeOn(el) ? ln.width : 0));
         path.setAttribute('stroke-linecap', 'round');
+        path.setAttribute('stroke-linejoin', 'round');
         const dash = lineDashArray(ln);
         if (dash) path.setAttribute('stroke-dasharray', dash);
         else path.removeAttribute('stroke-dasharray');
     }
+    const nodes = c.nodes;
+    let holder = d.querySelector('.curve-nodes');
+    if (!holder || holder.childElementCount !== nodes.length * 3) {
+        if (!holder) {
+            holder = document.createElement('div');
+            holder.className = 'curve-nodes';
+            d.appendChild(holder);
+        }
+        holder.textContent = '';
+        nodes.forEach((n, i) => {
+            const nd = document.createElement('div');
+            nd.className = 'curve-node';
+            nd.dataset.i = String(i);
+            nd.title = `节点 ${i + 1}：拖拽移动 · 双击删除 · Ctrl+点击切换平滑/尖角`;
+            holder.appendChild(nd);
+            ['in', 'out'].forEach(k => {
+                const hd = document.createElement('div');
+                hd.className = 'curve-ctrl';
+                hd.dataset.i = String(i);
+                hd.dataset.h = k;
+                hd.title = '控制柄：拖拽调弧度 · Alt 断开对称 · Shift 15° 吸附';
+                holder.appendChild(hd);
+            });
+        });
+    }
+    // 切线层：当前节点的两条控制柄引线
     const guides = d.querySelector('.curve-guides');
+    const sel = (state.nodeSel && state.nodeSel.id === el.id) ? state.nodeSel.i : -1;
     if (guides) {
         guides.setAttribute('viewBox', `0 0 ${w} ${h}`);
         guides.setAttribute('preserveAspectRatio', 'none');
-        const l1 = guides.querySelector('[data-g="l1"]'), l2 = guides.querySelector('[data-g="l2"]');
-        l1.setAttribute('x1', c.x1 * w); l1.setAttribute('y1', c.y1 * h);
-        l1.setAttribute('x2', c.cx1 * w); l1.setAttribute('y2', c.cy1 * h);
-        l2.setAttribute('x1', c.x2 * w); l2.setAttribute('y1', c.y2 * h);
-        l2.setAttribute('x2', c.cx2 * w); l2.setAttribute('y2', c.cy2 * h);
+        const active = sel >= 0 ? nodes[sel] : null;
+        if (!active || el.locked) {
+            guides.textContent = '';
+        } else {
+            guides.textContent = '';
+            ['in', 'out'].forEach(k => {
+                const has = k === 'in' ? curveNodeHasIn(active) : curveNodeHasOut(active);
+                if (!has) return;
+                const ln2 = document.createElementNS(SVG_NS, 'line');
+                ln2.setAttribute('x1', active.x * w); ln2.setAttribute('y1', active.y * h);
+                ln2.setAttribute('x2', (k === 'in' ? active.ix : active.ox) * w);
+                ln2.setAttribute('y2', (k === 'in' ? active.iy : active.oy) * h);
+                guides.appendChild(ln2);
+            });
+        }
     }
-    d.querySelectorAll('.curve-handle').forEach(hd => {
-        const cp = hd.dataset.cp;
-        const px = cp === 'x1' ? c.x1 : cp === 'x2' ? c.x2 : cp === 'cx1' ? c.cx1 : c.cx2;
-        const py = cp === 'x1' ? c.y1 : cp === 'x2' ? c.y2 : cp === 'cx1' ? c.cy1 : c.cy2;
-        hd.style.left = (px * 100) + '%';
-        hd.style.top = (py * 100) + '%';
+    holder.querySelectorAll('.curve-node').forEach(nd => {
+        const i = Number(nd.dataset.i), n = nodes[i];
+        if (!n) return;
+        nd.style.left = (n.x * 100) + '%';
+        nd.style.top = (n.y * 100) + '%';
+        nd.classList.toggle('sel', sel === i);
+    });
+    holder.querySelectorAll('.curve-ctrl').forEach(hd => {
+        const i = Number(hd.dataset.i), n = nodes[i];
+        if (!n) return;
+        const k = hd.dataset.h;
+        const hx = k === 'in' ? n.ix : n.ox, hy = k === 'in' ? n.iy : n.oy;
+        const has = k === 'in' ? curveNodeHasIn(n) : curveNodeHasOut(n);
+        hd.style.left = (hx * 100) + '%';
+        hd.style.top = (hy * 100) + '%';
+        hd.classList.toggle('on', sel === i && has);
     });
 }
 function syncElement(id) {
@@ -968,9 +1108,12 @@ function syncElement(id) {
 }
 function renderAll() {
     if (state.isTextEditing) finishTextEdit();   // 重建前先回写编辑内容，避免丢字
+    // 模型被整体替换（撤销 / 载入 / 新建）时丢弃钢笔草稿，避免画在旧坐标上
+    if (state.pen) { state.pen = null; if (typeof renderPenDraft === 'function') renderPenDraft(); }
     const c = $('canvas');
     c.textContent = '';
     nodeMap.clear();
+    syncNodeSel();
     const frag = document.createDocumentFragment();
     sortedElements().forEach(el => {
         const d = buildNode(el);
@@ -992,6 +1135,23 @@ function applySelectionClasses() {
         d.classList.toggle('active', set.has(id));
         d.classList.toggle('solo', id === solo);
     });
+    syncNodeSel();
+    // 选中状态变化后刷新曲线节点/控制柄的显示
+    if (solo && nodeMap.has(solo)) {
+        const el = getEl(solo);
+        if (el && el.type === 'curve') syncElement(solo);
+    }
+}
+/** 曲线节点选择跟随当前单选对象；换选时自动选中第一个节点，控制柄随之可见 */
+function syncNodeSel() {
+    const solo = state.selection.length === 1 ? getEl(state.selection[0]) : null;
+    if (solo && solo.type === 'curve') {
+        if (!state.nodeSel || state.nodeSel.id !== solo.id) state.nodeSel = { id: solo.id, i: 0 };
+        const n = solo.curve.nodes.length;
+        if (state.nodeSel.i >= n) state.nodeSel.i = n - 1;
+    } else {
+        state.nodeSel = null;
+    }
 }
 function syncCanvasSize() {
     const c = state.model.canvas;
@@ -1303,6 +1463,62 @@ function syncElBackgroundControls(f) {
     $('elAngleRow').style.display = f.mode === 'radial' ? 'none' : 'flex';
     $('elPosRow').style.display = (f.mode === 'radial' || f.mode === 'conic') ? 'flex' : 'none';
 }
+/* -------------------- 曲线填充面板（仅闭合路径） -------------------- */
+function syncCurveFillControls(el) {
+    const isCurve = !!(el && el.type === 'curve');
+    $('shapeFillControls').style.display = isCurve ? 'none' : 'block';
+    $('curveFillControls').style.display = isCurve ? 'block' : 'none';
+    if (!isCurve) return;
+    const f = el.fill, c = el.curve;
+    $('curveFillEnabled').checked = !!c.filled;
+    $('curveFillEnabled').disabled = !c.closed || !!el.locked;
+    $('curveFillMode').value = f.mode;
+    $('curveFillColor').value = f.color;
+    $('curveFillHex').textContent = f.color.toUpperCase();
+    $('curveFillGradStart').value = f.start;
+    $('curveFillGradEnd').value = f.end;
+    $('curveFillAngle').value = f.angle;
+    $('curveFillAngleVal').textContent = Math.round(f.angle) + '°';
+    $('curveFillAlpha').value = Math.round(f.alpha * 100);
+    $('curveFillAlphaVal').textContent = Math.round(f.alpha * 100) + '%';
+    $('curveStrokeEnabled').checked = c.strokeOn !== false;
+    $('curveStrokeColor').value = el.line.color;
+    $('curveStrokeHex').textContent = el.line.color.toUpperCase();
+    const grad = f.mode !== 'solid';
+    $('curveFillSolidRow').style.display = grad ? 'none' : 'flex';
+    $('curveFillGradControls').style.display = grad ? 'block' : 'none';
+}
+function updateCurveFill() {
+    const el = selectedEls().find(e => e.type === 'curve' && !e.locked);
+    if (!el) return;
+    const f = makeFill({
+        mode: $('curveFillMode').value,
+        color: $('curveFillColor').value,
+        start: $('curveFillGradStart').value,
+        end: $('curveFillGradEnd').value,
+        angle: $('curveFillAngle').value,
+        alpha: $('curveFillAlpha').value / 100
+    });
+    el.fill = f;
+    el.curve.filled = $('curveFillEnabled').checked && el.curve.closed;
+    $('curveFillHex').textContent = f.color.toUpperCase();
+    $('curveFillAngleVal').textContent = Math.round(f.angle) + '°';
+    $('curveFillAlphaVal').textContent = Math.round($('curveFillAlpha').value) + '%';
+    const grad = f.mode !== 'solid';
+    $('curveFillSolidRow').style.display = grad ? 'none' : 'flex';
+    $('curveFillGradControls').style.display = grad ? 'block' : 'none';
+    syncElement(el.id);
+    scheduleCommit();
+}
+function updateCurveStroke() {
+    const el = selectedEls().find(e => e.type === 'curve' && !e.locked);
+    if (!el) return;
+    el.curve.strokeOn = $('curveStrokeEnabled').checked;
+    el.line.color = $('curveStrokeColor').value;
+    $('curveStrokeHex').textContent = el.line.color.toUpperCase();
+    syncElement(el.id);
+    scheduleCommit();
+}
 function updatePropPanel(el) {
     $('geoX').value = Math.round(el.x);
     $('geoY').value = Math.round(el.y);
@@ -1319,6 +1535,7 @@ function updatePropPanel(el) {
 
     const isLine = el.type === 'line', isCurve = el.type === 'curve', isText = el.type === 'text';
     $('appearanceBlock').style.display = 'block';
+    syncCurveFillControls(el);
     $('elBgType').disabled = isLine || isCurve || isText;
     $('lineSpecific').style.display = (isLine || isCurve) ? 'block' : 'none';
     $('textSpecific').style.display = isText ? 'block' : 'none';
@@ -1339,6 +1556,7 @@ function updatePropPanel(el) {
         $('elColorInput').value = el.line.color;
         $('elColorHex').value = el.line.color.toUpperCase();
     }
+    if (typeof updateCurveNodePanel === 'function') updateCurveNodePanel(isCurve ? el : null);
     if (isText) {
         const t = el.text;
         $('fontSizeInput').value = t.fontSize;
@@ -1401,6 +1619,59 @@ function clientToWorld(clientX, clientY) {
         x: (clientX - vr.left - state.pan.x) / state.zoom,
         y: (clientY - vr.top - state.pan.y) / state.zoom
     };
+}
+/** 世界坐标 → 元素未旋转局部坐标（含自定义枢轴补偿） */
+function worldToLocalPoint(el, world) {
+    const h = el.type === 'line' ? lineHeightFor(el) : el.h;
+    const rad = el.rotation * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+    const P = pivotWorld(el);
+    const dx = world.x - P.x, dy = world.y - P.y;
+    return { x: el.pivotX * el.w + dx * cos + dy * sin, y: el.pivotY * h - dx * sin + dy * cos };
+}
+/** 局部像素坐标 → 曲线比例坐标 */
+function curveNorm(el, loc) {
+    return {
+        x: clamp(round3(loc.x / Math.max(1, el.w)), -3, 4),
+        y: clamp(round3(loc.y / Math.max(1, el.h)), -3, 4)
+    };
+}
+/** 平滑节点：让两侧控制柄共线（保留各自长度） */
+function smoothNodeHandles(el, i) {
+    const n = el.curve.nodes[i];
+    const hasIn = curveNodeHasIn(n), hasOut = curveNodeHasOut(n);
+    if (hasOut && hasIn) {
+        const lo = Math.hypot(n.ox - n.x, n.oy - n.y);
+        const li = Math.hypot(n.ix - n.x, n.iy - n.y);
+        if (lo < 1e-6) return;
+        const ux = (n.ox - n.x) / lo, uy = (n.oy - n.y) / lo;
+        n.ix = clamp(round3(n.x - ux * li), -3, 4);
+        n.iy = clamp(round3(n.y - uy * li), -3, 4);
+    } else if (hasOut) {
+        n.ix = clamp(round3(n.x * 2 - n.ox), -3, 4);
+        n.iy = clamp(round3(n.y * 2 - n.oy), -3, 4);
+    } else if (hasIn) {
+        n.ox = clamp(round3(n.x * 2 - n.ix), -3, 4);
+        n.oy = clamp(round3(n.y * 2 - n.iy), -3, 4);
+    }
+}
+/** 拖动一侧控制柄后，另一侧保持共线（平滑节点），保留其原长度 */
+function mirrorCurveHandle(n, moved) {
+    if (n.t === 'cusp') return;
+    const lIn = Math.hypot(n.ix - n.x, n.iy - n.y);
+    const lOut = Math.hypot(n.ox - n.x, n.oy - n.y);
+    const vx = moved === 'out' ? n.ox - n.x : n.ix - n.x;
+    const vy = moved === 'out' ? n.oy - n.y : n.iy - n.y;
+    const len = Math.hypot(vx, vy);
+    if (len < 1e-6) return;
+    const target = (moved === 'out' ? lIn : lOut) > 1e-6 ? (moved === 'out' ? lIn : lOut) : len;
+    const ux = -vx / len, uy = -vy / len;
+    if (moved === 'out') {
+        n.ix = clamp(round3(n.x + ux * target), -3, 4);
+        n.iy = clamp(round3(n.y + uy * target), -3, 4);
+    } else {
+        n.ox = clamp(round3(n.x + ux * target), -3, 4);
+        n.oy = clamp(round3(n.y + uy * target), -3, 4);
+    }
 }
 function showSizeTooltip(x, y, w, h) {
     const t = $('sizeTooltip');
@@ -1484,6 +1755,8 @@ function initCanvasInteraction() {
         });
     });
     window.addEventListener('dblclick', e => {
+        if (state.tool === 'bucket') { e.preventDefault(); return; }
+        if (state.tool === 'pen' && state.pen) { finishPen(false); e.preventDefault(); return; }
         const gn = e.target.closest && e.target.closest('.guide-line');
         if (gn) {
             selectGuide(gn.dataset.id);
@@ -1505,7 +1778,9 @@ function initCanvasInteraction() {
         const d = e.target.closest && e.target.closest('.canvas-element');
         if (!d) return;
         const el = getEl(d.dataset.id);
-        if (el) handleDoubleTap(el);
+        if (!el) return;
+        if (el.type === 'curve' && !el.locked && handleCurveDoubleTap(el, e)) { e.preventDefault(); return; }
+        handleDoubleTap(el);
     });
     window.addEventListener('pointermove', e => {
         pendingPointer = e;
@@ -1521,9 +1796,30 @@ function initCanvasInteraction() {
 function handleDoubleTap(el) {
     if (el.locked) return;
     if (el.type === 'text') startTextEdit(el);
-    else if (el.type === 'curve') toast('拖动琥珀色菱形控制点调整弧度，圆形端点移动起止位置', 'success');
+    else if (el.type === 'curve') {
+        if (state.selection.length !== 1) setSelection([el.id]);
+        toast('双击线段插入节点，双击节点删除；右侧「节点编辑」可闭合/断开、平滑/尖角', 'success');
+    }
     else if (el.type === 'line') toast('在右侧「线条样式」中切换实线 / 虚线 / 点线 / 波浪', 'success');
     else openCropModal(el.id);
+}
+/** 曲线双击：线段上加点，节点上删点 */
+function handleCurveDoubleTap(el, e) {
+    const nodeDiv = e.target.closest && e.target.closest('.curve-node');
+    if (nodeDiv) {
+        const i = Number(nodeDiv.dataset.i);
+        if (state.selection.length !== 1) setSelection([el.id]);
+        removeCurveNode(el, i);
+        return true;
+    }
+    const loc = worldToLocalPoint(el, clientToWorld(e.clientX, e.clientY));
+    const hit = curveSegHit(el, loc, 9 / state.zoom);
+    if (hit) {
+        if (state.selection.length !== 1) setSelection([el.id]);
+        insertCurveNode(el, hit.a, hit.b, hit.t);
+        return true;
+    }
+    return false;
 }
 function isChromeUI(target) {
     return !!(target.closest && (target.closest('.topbar') || target.closest('.contextbar') ||
@@ -1534,7 +1830,9 @@ function isChromeUI(target) {
 function onPointerDown(e) {
     if (e.button !== 0) return;
     const target = e.target;
-    if (isChromeUI(target)) return;                 // 点击面板不退出编辑态
+    // 颜料桶下尺寸标注浮层不拦截点击，交由 bucketHitElement 穿透到下方元素
+    const bucketMeasure = state.tool === 'bucket' && target.closest && target.closest('.measure-tag');
+    if (!bucketMeasure && isChromeUI(target)) return;   // 点击面板不退出编辑态
 
     const guideNode = target.closest('.guide-line');
     if (guideNode) {
@@ -1556,6 +1854,34 @@ function onPointerDown(e) {
     if (state.spaceDown || state.tool === 'pan') {
         state.interaction = { kind: 'pan', lastX: e.clientX, lastY: e.clientY };
         $('viewport').classList.add('panning');
+        e.preventDefault(); return;
+    }
+    if (state.tool === 'bucket') {
+        if (state.isTextEditing) finishTextEdit();
+        const hit = bucketHitElement(e.clientX, e.clientY, e.target);
+        const target = bucketDetectTarget(hit, e.clientX, e.clientY, e);
+        if (e.altKey) {
+            if (hit) {
+                const c = target === 'stroke'
+                    ? (hit.line ? hit.line.color : (hit.stroke ? hit.stroke.color : hit.fill.color))
+                    : hit.fill.color;
+                useColor(c);
+                setBucketColor(target, c);
+                toast('已吸取' + bucketSlotLabel(target) + '色 ' + c.toUpperCase(), 'success');
+            }
+            e.preventDefault(); return;
+        }
+        const painted = new Set();
+        if (hit && applyBucketColor(hit, target, bucketColor(target))) {
+            painted.add(hit.id);
+            setSelection([hit.id]);
+        }
+        state.interaction = { kind: 'bucketpaint', painted };
+        e.preventDefault(); return;
+    }
+    if (state.tool === 'pen') {
+        if (state.isTextEditing) finishTextEdit();
+        penPointerDown(e);
         e.preventDefault(); return;
     }
     if (state.tool === 'text') {
@@ -1580,7 +1906,8 @@ function onPointerDown(e) {
     const resizer = target.closest('.resizer');
     const rotator = target.closest('.rotator');
     const pivotH = target.closest('.pivot-handle');
-    const curveH = target.closest('.curve-handle');
+    const ctrlH = target.closest('.curve-ctrl');
+    const nodeH = target.closest('.curve-node');
     const d = target.closest('.canvas-element');
 
     if (pivotH && d) {
@@ -1597,12 +1924,40 @@ function onPointerDown(e) {
         clearTimeout(d._peekTimer);
         e.preventDefault(); return;
     }
-    if (curveH && d) {
+    if (ctrlH && d) {
         const el = getEl(d.dataset.id);
         if (!el || el.locked || el.type !== 'curve') return;
         if (!state.selection.includes(el.id)) setSelection([el.id]);
-        state.interaction = { kind: 'curve', id: el.id, cp: curveH.dataset.cp };
-        curveH.classList.add('dragging');
+        state.nodeSel = { id: el.id, i: Number(ctrlH.dataset.i) };
+        state.interaction = { kind: 'cctrl', id: el.id, i: Number(ctrlH.dataset.i), h: ctrlH.dataset.h };
+        ctrlH.classList.add('dragging');
+        syncElement(el.id);
+        e.preventDefault(); return;
+    }
+    if (nodeH && d) {
+        const el = getEl(d.dataset.id);
+        if (!el || el.locked || el.type !== 'curve') return;
+        if (!state.selection.includes(el.id)) setSelection([el.id]);
+        const i = Number(nodeH.dataset.i);
+        const n = el.curve.nodes[i];
+        if (!n) return;
+        if (e.ctrlKey || e.metaKey) {
+            n.t = n.t === 'cusp' ? 'smooth' : 'cusp';
+            if (n.t === 'smooth') smoothNodeHandles(el, i);
+            state.nodeSel = { id: el.id, i };
+            syncElement(el.id);
+            updateCurveNodePanel(el);
+            commit();
+            e.preventDefault(); return;
+        }
+        state.nodeSel = { id: el.id, i };
+        state.interaction = {
+            kind: 'cnode', id: el.id, i,
+            start: clientToWorld(e.clientX, e.clientY),
+            ox: n.x, oy: n.y
+        };
+        nodeH.classList.add('dragging');
+        syncElement(el.id);
         e.preventDefault(); return;
     }
     if (resizer && d) {
@@ -1672,7 +2027,19 @@ function onPointerDown(e) {
 function onPointerMove(e) {
     if (!e) return;
     const it = state.interaction;
-    if (!it) return;
+    if (!it) {
+        if (state.tool === 'bucket') { updateBucketHover(e); return; }
+        if (state.tool === 'pen' && state.pen) {
+            const w = penPointFromEvent(e);
+            const pen = state.pen;
+            const last = pen.nodes[pen.nodes.length - 1];
+            if (last && (Math.abs(w.x - pen.cursor.x) > 0.2 || Math.abs(w.y - pen.cursor.y) > 0.2)) {
+                pen.cursor = w;
+                renderPenDraft();
+            }
+        }
+        return;
+    }
     if (it.kind === 'pan') {
         state.pan.x += e.clientX - it.lastX;
         state.pan.y += e.clientY - it.lastY;
@@ -1709,6 +2076,19 @@ function onPointerMove(e) {
         state.selection = ids;
         applySelectionClasses();
         $('selCountBadge').textContent = ids.length;
+        return;
+    }
+    if (it.kind === 'bucketpaint') {
+        const el = bucketHitElement(e.clientX, e.clientY);
+        if (el && !it.painted.has(el.id)) {
+            const t = bucketDetectTarget(el, e.clientX, e.clientY, e);
+            if (applyBucketColor(el, t, bucketColor(t))) it.painted.add(el.id);
+        }
+        updateBucketHover(e);
+        return;
+    }
+    if (it.kind === 'pendrag') {
+        penDragMove(e);
         return;
     }
     if (it.kind === 'guidemove') {
@@ -1821,20 +2201,44 @@ function onPointerMove(e) {
         if (typeof drawMeasure === 'function') drawMeasure();
         return;
     }
-    if (it.kind === 'curve') {
+    if (it.kind === 'cnode') {
         const el = getEl(it.id); if (!el || !el.curve) return;
+        const n = el.curve.nodes[it.i]; if (!n) return;
         const world = clientToWorld(e.clientX, e.clientY);
-        const h = el.h;
-        const rad = el.rotation * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
-        const P = pivotWorld(el);
-        const dx = world.x - P.x, dy = world.y - P.y;
-        const lx = el.pivotX * el.w + dx * cos + dy * sin;
-        const ly = el.pivotY * h - dx * sin + dy * cos;
-        const cp = it.cp;
-        const kx = cp === 'x1' ? 'x1' : cp === 'x2' ? 'x2' : cp === 'cx1' ? 'cx1' : 'cx2';
-        const ky = cp === 'x1' ? 'y1' : cp === 'x2' ? 'y2' : cp === 'cx1' ? 'cy1' : 'cy2';
-        el.curve[kx] = clamp(round2(lx / el.w * 1000) / 1000, -3, 4);
-        el.curve[ky] = clamp(round2(ly / h * 1000) / 1000, -3, 4);
+        const loc = worldToLocalPoint(el, world);
+        const sLoc = worldToLocalPoint(el, it.start);
+        let dx = loc.x - sLoc.x, dy = loc.y - sLoc.y;
+        if (e.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
+        const nx = clamp(round3(it.ox + dx / el.w), -3, 4);
+        const ny = clamp(round3(it.oy + dy / el.h), -3, 4);
+        const mx = nx - n.x, my = ny - n.y;
+        n.x = nx; n.y = ny;
+        n.ix = clamp(round3(n.ix + mx), -3, 4); n.iy = clamp(round3(n.iy + my), -3, 4);
+        n.ox = clamp(round3(n.ox + mx), -3, 4); n.oy = clamp(round3(n.oy + my), -3, 4);
+        syncElement(el.id);
+        syncGeoInputs(el);
+        drawMeasure();
+        return;
+    }
+    if (it.kind === 'cctrl') {
+        const el = getEl(it.id); if (!el || !el.curve) return;
+        const n = el.curve.nodes[it.i]; if (!n) return;
+        const world = clientToWorld(e.clientX, e.clientY);
+        let loc = worldToLocalPoint(el, world);
+        if (e.shiftKey) {
+            // 控制柄方向 15° 吸附
+            const vx = loc.x - n.x * el.w, vy = loc.y - n.y * el.h;
+            let ang = Math.atan2(vy, vx);
+            const step = Math.PI / 12;
+            ang = Math.round(ang / step) * step;
+            const len = Math.hypot(vx, vy);
+            loc = { x: n.x * el.w + Math.cos(ang) * len, y: n.y * el.h + Math.sin(ang) * len };
+        }
+        const p = curveNorm(el, loc);
+        if (it.h === 'out') { n.ox = p.x; n.oy = p.y; }
+        else { n.ix = p.x; n.iy = p.y; }
+        if (!e.altKey) mirrorCurveHandle(n, it.h);
+        else n.t = 'cusp';
         syncElement(el.id);
         return;
     }
@@ -1856,6 +2260,15 @@ function endInteraction() {
         if (it.deleteHint) deleteGuide(it.id, true);
         commit();
         drawGuides();
+    } else if (it.kind === 'bucketpaint') {
+        if (it.painted.size) {
+            const sel = state.selection.length === 1 ? getEl(state.selection[0]) : null;
+            if (sel && it.painted.has(sel.id)) updatePropPanel(sel);
+            commit();
+            toast(`已为 ${it.painted.size} 个元素上色（按位置识别填充 / 描边）`, 'success');
+        }
+    } else if (it.kind === 'pendrag') {
+        // 钢笔取点结束：草稿仍在，等下一次点击或结束命令
     } else if (it.kind !== 'pan') {
         // 手动缩放后文本退出自动尺寸，避免下一帧又被内容撑回去
         if (it.kind === 'resize') {
@@ -1864,10 +2277,11 @@ function endInteraction() {
             });
             if (state.selection.length === 1) updatePropPanel(getEl(state.selection[0]));
         }
+        if (it.kind === 'cnode' || it.kind === 'cctrl') updateCurveNodePanel(getEl(it.id));
         commit();
     }
     hideSizeTooltip();
-    document.querySelectorAll('.pivot-handle.dragging, .curve-handle.dragging').forEach(n => n.classList.remove('dragging'));
+    document.querySelectorAll('.pivot-handle.dragging, .curve-node.dragging, .curve-ctrl.dragging').forEach(n => n.classList.remove('dragging'));
     const endedKind = state.interaction ? state.interaction.kind : null;
     document.querySelectorAll('.canvas-element.pivot-peek').forEach(n => {
         // 交互结束但指针仍停在元素上时延迟收起，便于继续调整枢轴
@@ -1879,6 +2293,366 @@ function endInteraction() {
     if (typeof clearSnapGuides === 'function') clearSnapGuides();
     if (typeof refreshStudioUI === 'function') refreshStudioUI();
 }
+/* -------------------- 曲线：节点编辑（增删 / 平滑 / 闭合 / 适配） -------------------- */
+function curveSelectedIndex(el) {
+    if (!el || !el.curve) return 0;
+    const n = el.curve.nodes.length;
+    const i = state.nodeSel && state.nodeSel.id === el.id ? state.nodeSel.i : 0;
+    return clamp(i, 0, Math.max(0, n - 1));
+}
+/** 线段列表：[起点索引, 终点索引]，闭合路径含末→首段 */
+function curveSegments(el) {
+    const n = el.curve.nodes.length;
+    const segs = [];
+    for (let i = 1; i < n; i++) segs.push([i - 1, i]);
+    if (el.curve.closed && n > 1) segs.push([n - 1, 0]);
+    return segs;
+}
+/** 命中测试：返回最近的线段与参数 t（局部像素坐标） */
+function curveSegHit(el, loc, tol) {
+    let best = null;
+    curveSegments(el).forEach(([a, b]) => {
+        const pts = curveSegPts(el.curve.nodes, a, b, el.w, el.h);
+        for (let s = 0; s <= 48; s++) {
+            const t = s / 48;
+            const p = cubicAt(pts[0], pts[1], pts[2], pts[3], t);
+            const d = Math.hypot(p.x - loc.x, p.y - loc.y);
+            if (!best || d < best.d) best = { d, a, b, t };
+        }
+    });
+    return best && best.d <= tol ? best : null;
+}
+/** 在指定线段的 t 处插入节点（De Casteljau 分割，形状不变） */
+function insertCurveNode(el, a, b, t) {
+    const nodes = el.curve.nodes;
+    const A = nodes[a], B = nodes[b];
+    if (!A || !B) return;
+    const px = p => ({ x: round3(p.x / Math.max(1, el.w)), y: round3(p.y / Math.max(1, el.h)) });
+    const flat = !curveNodeHasOut(A) && !curveNodeHasIn(B);
+    const pts = curveSegPts(nodes, a, b, el.w, el.h);
+    const split = splitCubic(pts, clamp(t, 0.05, 0.95));
+    const mid = px(split.mid);
+    const nn = { x: mid.x, y: mid.y, ix: mid.x, iy: mid.y, ox: mid.x, oy: mid.y, t: 'smooth' };
+    if (flat) {
+        A.ox = A.x; A.oy = A.y;
+        B.ix = B.x; B.iy = B.y;
+    } else {
+        const cA = px(split.left[1]), cB = px(split.right[2]);
+        A.ox = clamp(cA.x, -3, 4); A.oy = clamp(cA.y, -3, 4);
+        B.ix = clamp(cB.x, -3, 4); B.iy = clamp(cB.y, -3, 4);
+        nn.ix = clamp(px(split.left[2]).x, -3, 4); nn.iy = clamp(px(split.left[2]).y, -3, 4);
+        nn.ox = clamp(px(split.right[1]).x, -3, 4); nn.oy = clamp(px(split.right[1]).y, -3, 4);
+    }
+    const at = b === 0 ? nodes.length : b;
+    nodes.splice(at, 0, nn);
+    state.nodeSel = { id: el.id, i: at };
+    renderAll();
+    updateCurveNodePanel(el);
+    commit();
+    toast('已插入节点（形状保持不变）', 'success');
+}
+function removeCurveNode(el, i) {
+    const nodes = el.curve.nodes;
+    if (nodes.length <= 2) { toast('曲线至少保留 2 个节点', 'error'); return; }
+    nodes.splice(i, 1);
+    if (el.curve.closed && nodes.length < 3) el.curve.closed = false;
+    state.nodeSel = { id: el.id, i: clamp(i - 1, 0, nodes.length - 1) };
+    renderAll();
+    updateCurveNodePanel(el);
+    commit();
+    toast('已删除节点', 'success');
+}
+/** 把元素边框收紧到路径实际范围（含控制柄），路径位置保持不动 */
+function fitCurveBox(el) {
+    const b = curveLocalBox(el);
+    const pad = 2;
+    const offX = b.left - pad, offY = b.top - pad;
+    const nw = Math.max(4, round2(b.w + pad * 2)), nh = Math.max(4, round2(b.h + pad * 2));
+    const oldW = el.w, oldH = el.h;
+    // 局部坐标平移 off，保持形状在屏幕上的位置（兼容旋转与自定义枢轴）
+    const rad = el.rotation * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+    const oldPivot = pivotWorld(el);
+    const plx = el.pivotX * nw, ply = el.pivotY * nh;
+    const ox = offX + plx - el.pivotX * oldW;
+    const oy = offY + ply - el.pivotY * oldH;
+    el.x = round2(oldPivot.x + ox * cos - oy * sin - plx);
+    el.y = round2(oldPivot.y + ox * sin + oy * cos - ply);
+    el.curve.nodes.forEach(n => {
+        n.x = clamp(round3((n.x * oldW - offX) / nw), -3, 4);
+        n.y = clamp(round3((n.y * oldH - offY) / nh), -3, 4);
+        n.ix = clamp(round3((n.ix * oldW - offX) / nw), -3, 4);
+        n.iy = clamp(round3((n.iy * oldH - offY) / nh), -3, 4);
+        n.ox = clamp(round3((n.ox * oldW - offX) / nw), -3, 4);
+        n.oy = clamp(round3((n.oy * oldH - offY) / nh), -3, 4);
+    });
+    el.w = nw; el.h = nh;
+    renderAll();
+    updateCurveNodePanel(el);
+    updatePropPanel(el);
+    commit();
+    toast('边框已收紧到路径范围', 'success');
+}
+function curveOp(action) {
+    const el = selectedEls()[0];
+    if (!el || el.type !== 'curve') { toast('请先选中一条曲线', 'error'); return; }
+    if (el.locked) { toast('元素已锁定，无法编辑节点', 'error'); return; }
+    const c = el.curve;
+    const i = curveSelectedIndex(el);
+    if (action === 'close') {
+        if (c.nodes.length < 2) return;
+        c.closed = true;
+    } else if (action === 'open') {
+        c.closed = false;
+    } else if (action === 'add') {
+        const segs = curveSegments(el);
+        const seg = segs.find(sg => sg[0] === i) || segs[segs.length - 1];
+        if (!seg) return;
+        insertCurveNode(el, seg[0], seg[1], 0.5);
+        return;
+    } else if (action === 'del') {
+        removeCurveNode(el, i);
+        return;
+    } else if (action === 'smooth' || action === 'cusp') {
+        const n = c.nodes[i];
+        if (!n) return;
+        n.t = action;
+        if (action === 'smooth') smoothNodeHandles(el, i);
+    } else if (action === 'reverse') {
+        c.nodes.reverse();
+        c.nodes.forEach(n => {
+            const ix = n.ix, iy = n.iy;
+            n.ix = n.ox; n.iy = n.oy; n.ox = ix; n.oy = iy;
+        });
+        state.nodeSel = { id: el.id, i: c.nodes.length - 1 - i };
+    } else if (action === 'fit') {
+        fitCurveBox(el);
+        return;
+    }
+    syncElement(el.id);
+    updateCurveNodePanel(el);
+    syncCurveFillControls(el);
+    drawMeasure();
+    commit();
+    toast('路径已更新', 'success');
+}
+/** 同步曲线节点面板的状态 */
+function updateCurveNodePanel(el) {
+    const block = $('curveNodeBlock');
+    if (!block) return;
+    const isCurve = !!el && el.type === 'curve';
+    block.style.display = isCurve ? 'block' : 'none';
+    if (!isCurve) return;
+    const c = el.curve, n = c.nodes.length, i = curveSelectedIndex(el);
+    const info = $('curveNodeInfo');
+    if (info) info.textContent = `${n} 节点 · ${c.closed ? '闭合' : '开放'} · 当前 #${i + 1}`;
+    const closeBtn = $('btnCurveClose'), openBtn = $('btnCurveOpen');
+    if (closeBtn) closeBtn.disabled = !!c.closed || n < 2;
+    if (openBtn) openBtn.disabled = !c.closed;
+    block.querySelectorAll('.text-btn[data-arg]').forEach(b => {
+        const arg = b.dataset.arg;
+        if (arg === 'del') b.disabled = n <= 2 || el.locked;
+        else if (arg === 'smooth' || arg === 'cusp') {
+            const cur = c.nodes[i];
+            b.classList.toggle('active', !!cur && cur.t === arg);
+        }
+    });
+    const hint = $('curveNodeHint');
+    if (hint) hint.textContent = el.locked
+        ? '元素已锁定，解锁后即可编辑节点'
+        : '拖拽方块移动节点，拖拽圆形控制柄调整弧度（Alt 断开对称，Shift 15° 吸附）；双击线段加点，双击节点删点';
+}
+
+/* -------------------- 钢笔工具（贝塞尔路径绘制） -------------------- */
+function penNodeAt(p) {
+    return { x: round2(p.x), y: round2(p.y), ix: round2(p.x), iy: round2(p.y), ox: round2(p.x), oy: round2(p.y), t: 'smooth' };
+}
+function penPointFromEvent(e) {
+    const w = clientToWorld(e.clientX, e.clientY);
+    if (state.settings && state.settings.grid && !e.altKey) {
+        const g = Math.max(1, state.settings.gridSize || 20);
+        return { x: Math.round(w.x / g) * g, y: Math.round(w.y / g) * g };
+    }
+    return w;
+}
+/** 收起节点的出手柄（转为角点），使从它出发的下一段变成直线；入柄属于已画好的上一段，保持不变 */
+function penCollapseOutHandle(pen, i) {
+    const n = pen.nodes[i];
+    if (!n) return false;
+    if (Math.abs(n.ox - n.x) < 1e-6 && Math.abs(n.oy - n.y) < 1e-6) return false;
+    n.ox = n.x; n.oy = n.y; n.t = 'cusp';
+    return true;
+}
+function penPointerDown(e) {
+    const world = penPointFromEvent(e);
+    const pen = state.pen;
+    if (!pen) {
+        state.pen = { nodes: [penNodeAt(world)], cursor: world, closed: false,
+            lastDown: { x: world.x, y: world.y, t: Date.now() } };
+        state.interaction = { kind: 'pendrag', i: 0, sx: e.clientX, sy: e.clientY };
+        renderPenDraft();
+        return;
+    }
+    // 连点两下 = 结束当前路径
+    if (pen.lastDown && Date.now() - pen.lastDown.t < 340 &&
+        Math.hypot(world.x - pen.lastDown.x, world.y - pen.lastDown.y) * state.zoom < 7) {
+        finishPen(false);
+        return;
+    }
+    // 点回起点 = 闭合路径
+    const first = pen.nodes[0];
+    if (pen.nodes.length >= 2 && Math.hypot(world.x - first.x, world.y - first.y) * state.zoom <= 10) {
+        finishPen(true);
+        return;
+    }
+    const last = pen.nodes[pen.nodes.length - 1];
+    // Alt + 点击刚放下的锚点 = 收起它的出手柄，之后下一段即为直线
+    if (e.altKey && last && Math.hypot(world.x - last.x, world.y - last.y) * state.zoom <= 10) {
+        if (penCollapseOutHandle(pen, pen.nodes.length - 1)) {
+            state.interaction = null;
+            renderPenDraft();
+            toast('已收起出手柄：下一段为直线', 'success');
+        }
+        return;
+    }
+    // Alt + 落新点 = 顺带收起上一个节点的出手柄，让新生成的这一段是直线
+    pen.nodes.push(penNodeAt(world));
+    if (e.altKey) {
+        if (penCollapseOutHandle(pen, pen.nodes.length - 2)) toast('已收起出手柄：新段为直线', 'success');
+    }
+    pen.lastDown = { x: world.x, y: world.y, t: Date.now() };
+    state.interaction = { kind: 'pendrag', i: pen.nodes.length - 1, sx: e.clientX, sy: e.clientY };
+    renderPenDraft();
+}
+function penDragMove(e) {
+    const pen = state.pen;
+    if (!pen) return;
+    const it = state.interaction;
+    // 4px 死区：单击时的手抖不应生成出手柄，否则下一段会意外变成曲线
+    if (it && it.sx !== undefined && Math.hypot(e.clientX - it.sx, e.clientY - it.sy) < 4) return;
+    const n = pen.nodes[it ? it.i : pen.nodes.length - 1];
+    if (!n) return;
+    let world = clientToWorld(e.clientX, e.clientY);
+    let vx = world.x - n.x, vy = world.y - n.y;
+    if (e.shiftKey) {
+        const len = Math.hypot(vx, vy);
+        const step = Math.PI / 12;
+        const ang = Math.round(Math.atan2(vy, vx) / step) * step;
+        vx = Math.cos(ang) * len; vy = Math.sin(ang) * len;
+    }
+    n.ox = round2(n.x + vx); n.oy = round2(n.y + vy);
+    if (!e.altKey) { n.ix = round2(n.x - vx); n.iy = round2(n.y - vy); n.t = 'smooth'; }
+    else { n.t = 'cusp'; }
+    pen.cursor = world;
+    renderPenDraft();
+}
+function cancelPen() {
+    state.pen = null;
+    state.interaction = null;
+    renderPenDraft();
+}
+function finishPen(close, keepTool) {
+    const pen = state.pen;
+    state.pen = null;
+    state.interaction = null;
+    renderPenDraft();
+    if (pen && pen.nodes.length >= 2) {
+        const nodes = pen.nodes;
+        let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+        nodes.forEach(n => {
+            [[n.x, n.y], [n.ix, n.iy], [n.ox, n.oy]].forEach(([x, y]) => {
+                l = Math.min(l, x); t = Math.min(t, y); r = Math.max(r, x); b = Math.max(b, y);
+            });
+        });
+        const pad = 4;
+        const x = round2(l - pad), y = round2(t - pad);
+        const w = Math.max(8, round2(r - l + pad * 2)), h = Math.max(8, round2(b - t + pad * 2));
+        const el = buildElement('curve', x, y);
+        el.w = w; el.h = h;
+        const color = (state.settings.recentColors && state.settings.recentColors[0]) || '#1c2230';
+        el.line = makeLine({ style: 'solid', width: 3, color });
+        el.curve = makeCurve({
+            closed: !!close,
+            nodes: nodes.map(n => ({
+                x: (n.x - x) / w, y: (n.y - y) / h,
+                ix: (n.ix - x) / w, iy: (n.iy - y) / h,
+                ox: (n.ox - x) / w, oy: (n.oy - y) / h,
+                t: n.t
+            }))
+        });
+        state.model.elements.push(el);
+        renderAll();
+        setSelection([el.id]);
+        if (!keepTool) setTool('select');
+        commit();
+        toast(`已创建曲线 ${nodes.length} 个节点${close ? ' · 闭合路径，可用颜料桶 (B) 或检查器填充' : ''}`, 'success');
+    } else if (!keepTool) {
+        setTool('select');
+    }
+}
+/** 草稿预览：路径 + 节点 + 控制柄 + 到指针的橡皮筋 */
+function renderPenDraft() {
+    const layer = $('penLayer');
+    if (!layer) return;
+    layer.textContent = '';
+    const pen = state.pen;
+    if (!pen || !pen.nodes.length) return;
+    const z = state.zoom, p = state.pan;
+    const X = v => round2(v * z + p.x), Y = v => round2(v * z + p.y);
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('aria-hidden', 'true');
+    const ns = pen.nodes;
+    let d = `M ${X(ns[0].x)} ${Y(ns[0].y)}`;
+    for (let i = 1; i < ns.length; i++) {
+        d += ` C ${X(ns[i - 1].ox)} ${Y(ns[i - 1].oy)}, ${X(ns[i].ix)} ${Y(ns[i].iy)}, ${X(ns[i].x)} ${Y(ns[i].y)}`;
+    }
+    if (pen.closed && ns.length > 1) {
+        const L = ns[ns.length - 1];
+        d += ` C ${X(L.ox)} ${Y(L.oy)}, ${X(ns[0].ix)} ${Y(ns[0].iy)}, ${X(ns[0].x)} ${Y(ns[0].y)} Z`;
+    }
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('class', 'pen-path');
+    path.setAttribute('d', d);
+    svg.appendChild(path);
+    // 橡皮筋：从最后一个节点到指针，按最后一个节点的出控制柄预览弧度
+    const dragging = state.interaction && state.interaction.kind === 'pendrag';
+    const last = ns[ns.length - 1];
+    if (!dragging && pen.cursor && !pen.closed) {
+        const rb = document.createElementNS(SVG_NS, 'path');
+        rb.setAttribute('class', 'pen-rubber');
+        rb.setAttribute('d', `M ${X(last.x)} ${Y(last.y)} C ${X(last.ox)} ${Y(last.oy)}, ${X(pen.cursor.x)} ${Y(pen.cursor.y)}, ${X(pen.cursor.x)} ${Y(pen.cursor.y)}`);
+        svg.appendChild(rb);
+    }
+    // 控制柄与节点
+    const tail = last;
+    ['in', 'out'].forEach(k => {
+        const has = k === 'in' ? curveNodeHasIn(tail) : curveNodeHasOut(tail);
+        if (!has) return;
+        const ln = document.createElementNS(SVG_NS, 'line');
+        ln.setAttribute('class', 'pen-tangent');
+        ln.setAttribute('x1', X(tail.x)); ln.setAttribute('y1', Y(tail.y));
+        ln.setAttribute('x2', X(k === 'in' ? tail.ix : tail.ox));
+        ln.setAttribute('y2', Y(k === 'in' ? tail.iy : tail.oy));
+        svg.appendChild(ln);
+        const dot = document.createElementNS(SVG_NS, 'circle');
+        dot.setAttribute('class', 'pen-handle');
+        dot.setAttribute('cx', X(k === 'in' ? tail.ix : tail.ox));
+        dot.setAttribute('cy', Y(k === 'in' ? tail.iy : tail.oy));
+        dot.setAttribute('r', 3.2);
+        svg.appendChild(dot);
+    });
+    ns.forEach((n, i) => {
+        const sq = document.createElementNS(SVG_NS, 'rect');
+        sq.setAttribute('class', 'pen-node' + (i === 0 ? ' first' : ''));
+        sq.setAttribute('x', X(n.x) - 3.5);
+        sq.setAttribute('y', Y(n.y) - 3.5);
+        sq.setAttribute('width', 7);
+        sq.setAttribute('height', 7);
+        sq.setAttribute('rx', 1.5);
+        svg.appendChild(sq);
+    });
+    layer.appendChild(svg);
+}
+
 function createTextFromRect(a, b) {
     const dragged = Math.abs(b.x - a.x) > 8 || Math.abs(b.y - a.y) > 8;
     const el = buildElement('text', 0, 0);
@@ -2261,9 +3035,11 @@ function updateLineStyle(source) {
     const style = currentLineStyle();
     $('wavyControlRow').style.display = style === 'wavy' ? 'flex' : 'none';
     $('wavyDashRow').style.display = style === 'wavy' ? 'flex' : 'none';
+    const sample = selectedEls().find(e => !e.locked && (e.type === 'line' || e.type === 'curve'));
     const ln = makeLine({
         style, width: $('lineWidthInput').value,
-        color: $('elColorInput').value, wavyAmp: $('wavyAmpInput').value,
+        color: sample ? sample.line.color : $('elColorInput').value,
+        wavyAmp: $('wavyAmpInput').value,
         dash: currentWavyDash()
     });
     selectedEls().filter(e => !e.locked && (e.type === 'line' || e.type === 'curve')).forEach(e => {
@@ -2883,16 +3659,33 @@ function drawLineElement(ctx, el) {
 }
 function drawCurveElement(ctx, el) {
     const ln = el.line, c = el.curve, w = el.w, h = el.h;
+    const nodes = c.nodes;
+    if (!nodes || nodes.length < 2) return;
     ctx.strokeStyle = ln.color;
     ctx.lineWidth = ln.width;
     ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     if (ln.style === 'dashed') ctx.setLineDash([ln.width * 3, ln.width * 2]);
     else if (ln.style === 'dotted') ctx.setLineDash([0.1, ln.width * 1.8]);
     else ctx.setLineDash([]);
     ctx.beginPath();
-    ctx.moveTo(c.x1 * w, c.y1 * h);
-    ctx.bezierCurveTo(c.cx1 * w, c.cy1 * h, c.cx2 * w, c.cy2 * h, c.x2 * w, c.y2 * h);
-    ctx.stroke();
+    ctx.moveTo(nodes[0].x * w, nodes[0].y * h);
+    const seg = (a, b) => {
+        const flat = Math.abs(a.ox - a.x) < 1e-6 && Math.abs(a.oy - a.y) < 1e-6 &&
+            Math.abs(b.ix - b.x) < 1e-6 && Math.abs(b.iy - b.y) < 1e-6;
+        if (flat) ctx.lineTo(b.x * w, b.y * h);
+        else ctx.bezierCurveTo(a.ox * w, a.oy * h, b.ix * w, b.iy * h, b.x * w, b.y * h);
+    };
+    for (let i = 1; i < nodes.length; i++) seg(nodes[i - 1], nodes[i]);
+    if (c.closed && nodes.length > 1) { seg(nodes[nodes.length - 1], nodes[0]); ctx.closePath(); }
+    if (curveFillOn(el)) {
+        ctx.save();
+        ctx.globalAlpha = clamp(ctx.globalAlpha * finite(el.fill.alpha, 1), 0, 1);
+        paintFill(ctx, el.fill, w, h);
+        ctx.fill();
+        ctx.restore();
+    }
+    if (curveStrokeOn(el)) ctx.stroke();
     ctx.setLineDash([]);
 }
 async function drawElementContent(c, el) {
@@ -3080,8 +3873,7 @@ const SHAPE_PRESETS = [
     { type: 'triangle', label: '三角', color: '#f79009', w: 150, h: 150 },
     { type: 'star', label: '星形', color: '#f7b731', w: 150, h: 150 },
     { type: 'arrow', label: '箭头', color: '#9b6bff', w: 200, h: 100 },
-    { type: 'line', label: '分隔线', color: '#8b94a8', w: 280, h: 4 },
-    { type: 'curve', label: '曲线', color: '#4f6bff', w: 260, h: 140 }
+    { type: 'line', label: '分隔线', color: '#8b94a8', w: 280, h: 4 }
 ];
 const TEXT_PRESETS = [
     { label: '大标题', size: 48, weight: 700, color: '#1c2230' },
@@ -3093,7 +3885,12 @@ const SHORTCUTS = [
     ['撤销 / 重做', 'Ctrl+Z / Ctrl+Y'], ['复制 / 粘贴', 'Ctrl+C / Ctrl+V'],
     ['创建副本', 'Ctrl+D'], ['全选', 'Ctrl+A'], ['保存项目', 'Ctrl+S'],
     ['组合 / 解组', 'Ctrl+G / Ctrl+Shift+G'], ['适应屏幕', 'Alt+Z'],
-    ['显示网格', "Ctrl+'"], ['选择 / 平移 / 文本工具', 'V / H / T'], ['曲线工具', 'C'],
+    ['显示网格', "Ctrl+'"],     ['选择 / 平移 / 文本 / 钢笔 / 颜料桶', 'V / H / T / P / B'], ['插入矩形', 'R'],
+    ['钢笔：闭合路径', '点回起点'], ['钢笔：结束 / 取消', 'Enter / Esc'],
+    ['钢笔：下一段拉直', 'Alt+点击锚点 / 落点'],
+    ['颜料桶：连续上色 / 吸色', '按住拖动 / Alt+点击'],
+    ['颜料桶：强制改描边', 'Shift + 点击'],
+    ['曲线：双击线段 / 节点', '加点 / 删点'], ['节点对称吸附', 'Shift 拖拽控制柄'],
     ['方向键移动', '↑ ↓ ← →'], ['大步长移动', 'Shift + 方向键'],
     ['等比缩放 / 角度吸附', 'Shift + 拖拽'], ['临时平移', '空格 + 拖拽'],
     ['跳过吸附', 'Alt + 拖拽'], ['删除', 'Delete'], ['取消 / 取消选择', 'Esc'],
@@ -3134,13 +3931,181 @@ function toggleSetting(key, label) {
     saveSettings(); applyViewSettings();
     toast(label + (state.settings[key] ? '已开启' : '已关闭'), 'success');
 }
+/* -------------------- 颜料桶工具（矢量填色，不做像素漫水） -------------------- */
+const BUCKET_FILL_DEFAULT = '#4f6bff', BUCKET_STROKE_DEFAULT = '#1c2230';
+const bucketSlotLabel = s => s === 'stroke' ? '描边' : '填充';
+function bucketColor(slot) {
+    const s = state.settings;
+    const v = s && (slot === 'stroke' ? s.bucketStrokeColor : s.bucketFillColor);
+    return HEX_RE.test(v) ? v : (slot === 'stroke' ? BUCKET_STROKE_DEFAULT : BUCKET_FILL_DEFAULT);
+}
+function setBucketColor(slot, color) {
+    if (!state.settings || !HEX_RE.test(color)) return;
+    if (slot === 'stroke') state.settings.bucketStrokeColor = color;
+    else state.settings.bucketFillColor = color;
+    state.bucketSlot = slot;
+    saveSettings();
+    syncBucketSwatch();
+}
+/** 为指定色槽打开隐藏的原生取色器 */
+function openBucketPicker(slot) {
+    const input = $('bucketColorInput');
+    if (!input) return;
+    state.bucketSlot = slot || 'fill';
+    input.value = bucketColor(state.bucketSlot);
+    syncBucketSwatch();
+    if (typeof input.showPicker === 'function') {
+        try { input.showPicker(); return; } catch (err) { /* 回退到 click */ }
+    }
+    input.click();
+}
+function syncBucketSwatch() {
+    const fill = bucketColor('fill'), stroke = bucketColor('stroke');
+    const fChip = $('bucketFillChip'), sChip = $('bucketStrokeChip');
+    if (fChip) fChip.style.background = fill;
+    if (sChip) sChip.style.background = stroke;
+    const fSlot = $('bucketFillSlot'), sSlot = $('bucketStrokeSlot');
+    if (fSlot) {
+        fSlot.title = '填充色 ' + fill.toUpperCase() + '：点此选色';
+        fSlot.classList.toggle('active', state.bucketSlot !== 'stroke');
+    }
+    if (sSlot) {
+        sSlot.title = '描边色 ' + stroke.toUpperCase() + '：点此选色';
+        sSlot.classList.toggle('active', state.bucketSlot === 'stroke');
+    }
+    const btn = $('railBucket');
+    if (btn) btn.title = '颜料桶 (B)：填充 ' + fill.toUpperCase() + ' · 描边 ' + stroke.toUpperCase()
+        + '；点内部改填充、点边缘改描边，Shift 强制描边，Alt+点击吸色，拖动连续上色';
+}
+function bucketHitElement(x, y, target) {
+    let d = target && target.closest ? target.closest('.canvas-element') : null;
+    // 尺寸标注、选框手柄等浮层可能盖在元素中心，逐层向下找真正的画布元素
+    if (!d && typeof document.elementsFromPoint === 'function') {
+        for (const n of document.elementsFromPoint(x, y)) {
+            const c = n.closest && n.closest('.canvas-element');
+            if (c) { d = c; break; }
+        }
+    }
+    if (!d) {
+        const node = document.elementFromPoint(x, y);
+        if (node && node.closest) d = node.closest('.canvas-element');
+    }
+    return d ? getEl(d.dataset.id) : null;
+}
+/** 交互识别：点在描边带上改描边，点在内部改填充；无填充概念的元素一律按描边处理 */
+function bucketDetectTarget(el, x, y, e) {
+    if (!el) return 'fill';
+    if (e && e.shiftKey) return 'stroke';
+    if (el.type === 'line' || (el.type === 'curve' && !(el.curve && el.curve.closed))) return 'stroke';
+    const loc = worldToLocalPoint(el, clientToWorld(x, y));
+    const edgePx = 8 / (state.zoom || 1);   // 边缘命中带按屏幕像素换算到元素局部坐标
+    if (el.type === 'curve') {
+        const d = nodeMap.get(el.id);
+        const path = d && d.querySelector('.curve-svg path');
+        if (path && typeof path.isPointInStroke === 'function' && typeof DOMPoint === 'function') {
+            const old = path.getAttribute('stroke-width');
+            try {
+                // 临时放大描边命中带，缩放后也能轻松点到细描边
+                path.setAttribute('stroke-width', String(2 * edgePx + finite(el.line.width, 3)));
+                const pt = new DOMPoint(loc.x, loc.y);
+                if (path.isPointInStroke(pt)) return 'stroke';
+                if (path.isPointInFill(pt)) return 'fill';
+                return 'stroke';   // 路径之外视为描边带，便于重新启用已关闭的描边
+            } catch (err) { /* 回退到内部判定 */ }
+            finally {
+                if (old !== null) path.setAttribute('stroke-width', old);
+                else path.removeAttribute('stroke-width');
+            }
+        }
+        return 'fill';
+    }
+    const sw = Math.max(edgePx, finite(el.stroke && el.stroke.width, 0) + edgePx);
+    if (loc.x <= sw || loc.y <= sw || loc.x >= el.w - sw || loc.y >= el.h - sw) return 'stroke';
+    return 'fill';
+}
+/** 按识别结果写入对应颜色：stroke 改描边，fill 改填充 */
+function applyBucketColor(el, target, color) {
+    if (!el || el.locked || el.visible === false || !HEX_RE.test(color)) return false;
+    const stroke = target === 'stroke';
+    if (stroke && (el.type === 'line' || el.type === 'curve')) {
+        el.line.color = color;
+        if (el.type === 'curve') el.curve.strokeOn = true;
+    } else if (stroke && el.type === 'text') {
+        el.fill.color = color;
+        el.text.runs.forEach(r => { r.color = ''; });
+    } else if (stroke) {
+        el.stroke = makeStroke(Object.assign({}, el.stroke, {
+            color, width: Math.max(1, finite(el.stroke && el.stroke.width, 0))
+        }));
+    } else if (el.type === 'line' || (el.type === 'curve' && !(el.curve && el.curve.closed))) {
+        el.line.color = color;
+    } else if (el.type === 'text') {
+        el.fill.color = color;
+        el.text.runs.forEach(r => { r.color = ''; });
+    } else {
+        el.fill.mode = 'solid';
+        el.fill.color = color;
+        if (el.type === 'curve') el.curve.filled = true;
+    }
+    syncElement(el.id);
+    return true;
+}
+/* -------------------- 颜料桶悬停预览 -------------------- */
+let bucketHoverEl = null;
+function hideBucketHover() {
+    const tip = $('bucketHover');
+    if (tip) tip.classList.remove('on');
+    const d = bucketHoverEl && nodeMap.get(bucketHoverEl);
+    if (d) {
+        delete d.dataset.bucketTarget;
+        d.style.removeProperty('--bucket-hi');
+        d.style.removeProperty('--bucket-hi-fade');
+    }
+    bucketHoverEl = null;
+}
+function updateBucketHover(e) {
+    const tip = $('bucketHover');
+    if (!tip) return;
+    const el = bucketHitElement(e.clientX, e.clientY, e.target);
+    if (!el || el.locked || el.visible === false) { hideBucketHover(); return; }
+    const target = bucketDetectTarget(el, e.clientX, e.clientY, e);
+    const color = bucketColor(target);
+    if (bucketHoverEl !== el.id) hideBucketHover();
+    const d = nodeMap.get(el.id);
+    if (!d) { hideBucketHover(); return; }
+    bucketHoverEl = el.id;
+    d.dataset.bucketTarget = target;
+    d.style.setProperty('--bucket-hi', color);
+    if (target === 'stroke') d.style.removeProperty('--bucket-hi-fade');
+    else d.style.setProperty('--bucket-hi-fade', hexToRgba(color, .22));
+    const chip = $('bucketHoverChip'), text = $('bucketHoverText');
+    if (chip) chip.style.background = color;
+    if (text) text.textContent = bucketSlotLabel(target) + ' · ' + color.toUpperCase();
+    tip.style.left = (e.clientX + 16) + 'px';
+    tip.style.top = (e.clientY + 16) + 'px';
+    tip.classList.add('on');
+}
 function setTool(name) {
+    if (name !== 'pen' && state.pen) finishPen(false, true);
+    if (name !== 'pen') renderPenDraft();
     state.tool = name;
-    ['railSelect', 'railPan', 'railText'].forEach(id => { const n = $(id); if (n) n.classList.remove('active'); });
-    const railId = name === 'pan' ? 'railPan' : name === 'text' ? 'railText' : 'railSelect';
-    $(railId).classList.add('active');
+    ['railSelect', 'railPan', 'railText', 'railPen', 'railBucket'].forEach(id => { const n = $(id); if (n) n.classList.remove('active'); });
+    const railId = name === 'pan' ? 'railPan' : name === 'text' ? 'railText' : name === 'pen' ? 'railPen'
+        : name === 'bucket' ? 'railBucket' : 'railSelect';
+    const btn = $(railId);
+    if (btn) btn.classList.add('active');
     $('viewport').classList.toggle('tool-pan', name === 'pan');
     $('viewport').classList.toggle('tool-text', name === 'text');
+    $('viewport').classList.toggle('tool-pen', name === 'pen');
+    $('viewport').classList.toggle('tool-bucket', name === 'bucket');
+    syncBucketSwatch();
+    if (name !== 'bucket') hideBucketHover();
+    if (name === 'pen') {
+        toast('钢笔：单击加角点，拖拽出曲线；Alt+点击锚点或 Alt+落新点可让下一段变直线；Enter 完成', 'success');
+    } else if (name === 'bucket') {
+        toast('颜料桶：填充 ' + bucketColor('fill').toUpperCase() + ' · 描边 ' + bucketColor('stroke').toUpperCase()
+            + '；点内部改填充、点边缘改描边，Shift 强制描边，Alt+点击吸色', 'success');
+    }
 }
 function toggleInspector() {
     state.settings.inspectorVisible = !state.settings.inspectorVisible;
@@ -3345,6 +4310,9 @@ function drawSnapGuides(guides) {
 }
 function clearSnapGuides() { const l = $('guidesLayer'); if (l) l.textContent = ''; }
 /* -------------------- 尺寸 / 边距标注（数值可点击编辑） -------------------- */
+// 标注显示阈值（屏幕像素）：过远的测量线只会让画面变乱
+const MEASURE_LIMIT = { gap: 300, align: 220, guide: 300, margin: 260 };
+const GAP_ARROW = { left: '←', right: '→', top: '↑', bottom: '↓' };
 function measureApplySize(axis, v) {
     v = Math.max(1, round2(v));
     if (state.selection.length === 1) {
@@ -3414,7 +4382,7 @@ function openMeasureEditor(span, value, apply, label) {
     });
     input.addEventListener('blur', () => finish(true));
 }
-function measureNum(parent, value, apply, label) {
+function measureNum(parent, value, apply, label, tip) {
     const s = document.createElement('span');
     s.className = 'measure-num';
     s.textContent = value;
@@ -3422,7 +4390,7 @@ function measureNum(parent, value, apply, label) {
     s.setAttribute('role', 'spinbutton');
     s.setAttribute('aria-valuenow', String(value));
     s.setAttribute('aria-label', label);
-    s.title = '点击编辑' + label + '（↑↓ 按步长微调，Shift 加速，Enter 确认，Esc 取消）';
+    s.title = tip || ('点击编辑' + label + '（↑↓ 按步长微调，Shift 加速，Enter 确认，Esc 取消）');
     const open = () => openMeasureEditor(s, value, apply, label);
     s.addEventListener('click', e => { e.stopPropagation(); open(); });
     s.addEventListener('keydown', e => {
@@ -3438,30 +4406,72 @@ function measureText(parent, text) {
     parent.appendChild(s);
     return s;
 }
-/** 标签选位：沿测量线滑动避让；短线段所有候选都冲突时垂直让位，保证标签不叠放 */
-function drawerWorldLimit(z) {
+/* -------------------- 标注排版：屏幕坐标尺寸线 + 药丸标签批量避让 -------------------- */
+/** 水平尺寸线（含两端刻度） */
+function measureDimH(x1, x2, y, tick) {
+    const t = tick || 4;
+    return `M ${round2(x1)} ${round2(y - t)} V ${round2(y + t)} M ${round2(x1)} ${round2(y)} H ${round2(x2)} M ${round2(x2)} ${round2(y - t)} V ${round2(y + t)}`;
+}
+/** 垂直尺寸线（含两端刻度） */
+function measureDimV(x, y1, y2, tick) {
+    const t = tick || 4;
+    return `M ${round2(x - t)} ${round2(y1)} H ${round2(x + t)} M ${round2(x)} ${round2(y1)} V ${round2(y2)} M ${round2(x - t)} ${round2(y2)} H ${round2(x + t)}`;
+}
+/** 任意方向尺寸线（旋转物件用），刻度垂直于线方向 */
+function measureDimSeg(ax, ay, bx, by, tick) {
+    const t = tick || 4;
+    const dx = bx - ax, dy = by - ay;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len, ny = dx / len;
+    return `M ${round2(ax + nx * t)} ${round2(ay + ny * t)} L ${round2(ax - nx * t)} ${round2(ay - ny * t)}` +
+        ` M ${round2(ax)} ${round2(ay)} L ${round2(bx)} ${round2(by)}` +
+        ` M ${round2(bx + nx * t)} ${round2(by + ny * t)} L ${round2(bx - nx * t)} ${round2(by - ny * t)}`;
+}
+/** 视口内可用右边界：窄屏时检查器是覆盖画布的抽屉，标注需让位 */
+function measureDrawerLimit() {
     const insp = $('inspector');
     if (!insp || insp.classList.contains('collapsed') || getComputedStyle(insp).position !== 'absolute') return null;
     const ir = insp.getBoundingClientRect(), vr = $('viewport').getBoundingClientRect();
     if (ir.left >= vr.right || ir.right <= vr.left) return null;
-    return (ir.left - vr.left - 18 - state.pan.x) / z;
+    return ir.left - vr.left - 16;
 }
-function tagClearOfDrawer(c, z) {
-    const lim = drawerWorldLimit(z);
-    return lim === null || c.x < lim;
-}
-function pickTagPos(at, perp, avoid, z) {
-    for (const t of [0.5, 0.25, 0.75, 0.12, 0.88]) {
-        const c = at(t);
-        if (!tagClearOfDrawer(c, z)) continue;
-        if (!avoid.some(p => Math.abs(p.x - c.x) * z < 52 && Math.abs(p.y - c.y) * z < 20)) return c;
-    }
-    const m = at(0.5);
-    const fb = { x: m.x + perp.x * 30 / z, y: m.y + perp.y * 30 / z };
-    const lim = drawerWorldLimit(z);
-    if (lim !== null) fb.x = Math.min(fb.x, lim);
-    if (avoid.some(p => Math.abs(p.x - fb.x) * z < 52 && Math.abs(p.y - fb.y) * z < 20)) fb.y += 26 / z;
-    return fb;
+/**
+ * 标签批量排版：先统一读尺寸（一次布局），再统一写位置
+ * pending: [{ d, cx, cy, mode:'center'|'above' }]，seeds: 需要避让的屏幕矩形
+ */
+function layoutMeasureTags(pending, seeds) {
+    if (!pending || !pending.length) return;
+    const vp = $('viewport');
+    const vw = vp.clientWidth, vh = vp.clientHeight;
+    const lim = measureDrawerLimit();
+    const right = lim === null ? vw - 4 : clamp(lim, 140, vw - 4);
+    const items = pending.slice();
+    items.forEach(it => { it.w = it.d.offsetWidth || 46; it.h = it.d.offsetHeight || 19; });
+    const placed = (seeds || []).map(s => ({ l: s.l, r: s.r, t: s.t, b: s.b }));
+    const clash = r => placed.some(p => !(r.r + 3 < p.l || r.l - 3 > p.r || r.b + 3 < p.t || r.t - 3 > p.b));
+    const CENTER = [[0, 0], [0, -1], [0, 1], [-1, 0], [1, 0], [0, -2], [0, 2], [-1, -1], [1, -1], [-1, 1], [1, 1]];
+    const ABOVE = [[0, -1], [0, 0], [0, -2], [-1, -1], [1, -1], [-1, 0], [1, 0], [0, 1], [0, 2], [-1, 1], [1, 1]];
+    items.forEach(it => {
+        const w = it.w, h = it.h;
+        const order = it.mode === 'center' ? CENTER : ABOVE;
+        let pick = null;
+        for (const [dx, dy] of order) {
+            const x = clamp(it.cx + dx * (w / 2 + 7), w / 2 + 4, Math.max(w / 2 + 4, right - w / 2));
+            const y = clamp(it.cy + dy * (h + 5), h / 2 + 4, Math.max(h / 2 + 4, vh - h / 2 - 4));
+            const r = { x, y, l: x - w / 2, r: x + w / 2, t: y - h / 2, b: y + h / 2 };
+            if (clash(r)) continue;
+            pick = r;
+            break;
+        }
+        if (!pick) {
+            const x = clamp(it.cx, w / 2 + 4, Math.max(w / 2 + 4, right - w / 2));
+            const y = clamp(it.cy, h / 2 + 4, Math.max(h / 2 + 4, vh - h / 2 - 4));
+            pick = { x, y, l: x - w / 2, r: x + w / 2, t: y - h / 2, b: y + h / 2 };
+        }
+        it.d.style.left = pick.x + 'px';
+        it.d.style.top = pick.y + 'px';
+        placed.push(pick);
+    });
 }
 /* -------------------- 相邻物件间距（四向最近邻，玫红色标注） -------------------- */
 const GAP_SIDE_NAME = { left: '左', right: '右', top: '上', bottom: '下' };
@@ -3506,18 +4516,25 @@ function alignmentMeasures(box, elements, excludeIds) {
         if (!h || dh < h.d) h = { o, a, d: dh };
         if (!v || dv < v.d) v = { o, a, d: dv };
     });
+    // 每个方向只保留差值更小的一条边，避免四个数字同时出现造成干扰
     const out = [];
     if (h && h.d > 1e-6) {
         const right = h.a.cx > box.cx;
         const mx = ((right ? box.right : h.a.right) + (right ? h.a.left : box.left)) / 2;
-        out.push({ otherId: h.o.id, edge: 'top', delta: round2(box.top - h.a.top), line: { axis: 'v', x: mx, y1: box.top, y2: h.a.top } });
-        out.push({ otherId: h.o.id, edge: 'bottom', delta: round2(box.bottom - h.a.bottom), line: { axis: 'v', x: mx, y1: box.bottom, y2: h.a.bottom } });
+        const cand = [
+            { otherId: h.o.id, edge: 'top', delta: round2(box.top - h.a.top), line: { axis: 'v', x: mx, y1: box.top, y2: h.a.top } },
+            { otherId: h.o.id, edge: 'bottom', delta: round2(box.bottom - h.a.bottom), line: { axis: 'v', x: mx, y1: box.bottom, y2: h.a.bottom } }
+        ];
+        out.push(cand[Math.abs(cand[1].delta) < Math.abs(cand[0].delta) ? 1 : 0]);
     }
     if (v && v.d > 1e-6) {
         const below = v.a.cy > box.cy;
         const my = ((below ? box.bottom : v.a.bottom) + (below ? v.a.top : box.top)) / 2;
-        out.push({ otherId: v.o.id, edge: 'left', delta: round2(box.left - v.a.left), line: { axis: 'h', x1: box.left, x2: v.a.left, y: my } });
-        out.push({ otherId: v.o.id, edge: 'right', delta: round2(box.right - v.a.right), line: { axis: 'h', x1: box.right, x2: v.a.right, y: my } });
+        const cand = [
+            { otherId: v.o.id, edge: 'left', delta: round2(box.left - v.a.left), line: { axis: 'h', x1: box.left, x2: v.a.left, y: my } },
+            { otherId: v.o.id, edge: 'right', delta: round2(box.right - v.a.right), line: { axis: 'h', x1: box.right, x2: v.a.right, y: my } }
+        ];
+        out.push(cand[Math.abs(cand[1].delta) < Math.abs(cand[0].delta) ? 1 : 0]);
     }
     return out;
 }
@@ -3530,16 +4547,6 @@ function applyAlignDelta(a, v) {
     const d = round2(round2(v) - (b[a.edge] - aa[a.edge]));
     if (a.edge === 'top' || a.edge === 'bottom') moveSelected(0, d);
     else moveSelected(d, 0);
-}
-function gapPathD(g, zoom, pan) {
-    const X = v => round2(v * zoom + pan.x), Y = v => round2(v * zoom + pan.y);
-    const t = 4;
-    if (g.axis === 'h') {
-        const x1 = X(g.x1), x2 = X(g.x2), y = Y(g.y);
-        return `M ${x1} ${y - t} V ${y + t} M ${x1} ${y} H ${x2} M ${x2} ${y - t} V ${y + t}`;
-    }
-    const x = X(g.x), y1 = Y(g.y1), y2 = Y(g.y2);
-    return `M ${x - t} ${y1} H ${x + t} M ${x} ${y1} V ${y2} M ${x - t} ${y2} H ${x + t}`;
 }
 function applyNeighborGap(g, v) {
     const o = getEl(g.otherId);
@@ -3752,147 +4759,221 @@ function drawMeasure() {
     if (!box) return;
     const single = state.selection.length === 1 ? getEl(state.selection[0]) : null;
     const locked = !!(single && single.locked);
-    const tag = (x, y, fill, cls) => {
+    const z = state.zoom || 1;
+    const X = v => round2(v * z + state.pan.x), Y = v => round2(v * z + state.pan.y);
+    const cw = state.model.canvas.w, ch = state.model.canvas.h;
+
+    /* ---- 基础构件：尺寸线层（先建保证在标签之下）、药丸标签 ---- */
+    const lineLayer = cls => {
+        const svg = document.createElementNS(SVG_NS, 'svg');
+        svg.setAttribute('class', 'measure-lines' + (cls ? ' ' + cls : ''));
+        svg.setAttribute('aria-hidden', 'true');
+        layer.appendChild(svg);
+        return d => {
+            if (!d) return;
+            const p = document.createElementNS(SVG_NS, 'path');
+            p.setAttribute('d', d);
+            svg.appendChild(p);
+        };
+    };
+    const sizeLine = lineLayer('size-lines');
+    const sizeExt = lineLayer('size-lines ext');
+    const gapLine = lineLayer('');
+    const alignLine = lineLayer('align-lines');
+    const guideLine = lineLayer('guide-lines');
+    const marginLine = lineLayer('margin-lines');
+
+    const pending = [];
+    const addTag = (cls, fill, cx, cy, opt) => {
         const d = document.createElement('div');
         d.className = 'measure-tag' + (cls ? ' ' + cls : '');
-        d.style.left = (x * state.zoom + state.pan.x) + 'px';
-        d.style.top = (y * state.zoom + state.pan.y) + 'px';
+        d.style.left = cx + 'px';
+        d.style.top = cy + 'px';
         fill(d);
+        if (opt && opt.title) d.title = opt.title;
         layer.appendChild(d);
+        pending.push({ d, cx, cy, mode: (opt && opt.mode) || 'above' });
+        return d;
     };
-    const cw = state.model.canvas.w, ch = state.model.canvas.h;
-    // 单选显示自身宽高（与属性面板一致，旋转后也可精确编辑），多选显示选区包围盒
+    const tagKey = (d, k) => {
+        const s = document.createElement('span');
+        s.className = 'measure-key';
+        s.textContent = k;
+        d.appendChild(s);
+    };
+    // 只读（锁定）时输出纯文本，否则输出可点击编辑的数值
+    const tagVal = (d, value, apply, label, title) => {
+        if (locked) return measureText(d, String(Math.round(value)));
+        return measureNum(d, Math.round(value), apply, label, title);
+    };
+
+    /* ---- 1. 自身尺寸：贴着物件自身边缘的 W / H 尺寸线（旋转后随物件倾斜） ---- */
     const sizeW = single ? single.w : box.w;
     const sizeH = single ? lineHeightFor(single) : box.h;
     const angle = single ? ((Math.round(single.rotation) % 360) + 360) % 360 : 0;
-    let sizeY = box.top - 12;
-    let rot = null;
-    if (single && angle !== 0) {
-        // 旋转柄在哪一半，尺寸标签就放到另一侧，避免盖住旋转锚点
-        rot = rotatorWorld(single);
-        if (rot.y < box.cy) sizeY = box.bottom + 16;
-    }
-    tag(box.cx, sizeY, d => {
-        if (locked) measureText(d, `${Math.round(sizeW)} × ${Math.round(sizeH)}`);
-        else {
-            measureNum(d, Math.round(sizeW), v => measureApplySize('w', v), '宽度');
-            measureText(d, ' × ');
-            if (single && single.type === 'line') {
-                const s = measureText(d, String(Math.round(sizeH)));
-                s.title = '线条显示高度由粗细决定，请在「线条样式」中调整粗细';
-            } else measureNum(d, Math.round(sizeH), v => measureApplySize('h', v), '高度');
+    const rotated = !!(single && angle !== 0);
+    const rot = rotated ? rotatorWorld(single) : null;
+    // 物件四角（屏幕坐标）：多选或未旋转时等价于 AABB
+    const corner = (() => {
+        if (!single) {
+            return [{ x: X(box.left), y: Y(box.top) }, { x: X(box.right), y: Y(box.top) },
+                { x: X(box.right), y: Y(box.bottom) }, { x: X(box.left), y: Y(box.bottom) }];
         }
-        if (single && angle !== 0) {
-            measureText(d, ' · ∠');
+        const a = single.rotation * Math.PI / 180, cos = Math.cos(a), sin = Math.sin(a);
+        const P = pivotWorld(single);
+        const px = single.pivotX * single.w, py = single.pivotY * sizeH;
+        return [[0, 0], [single.w, 0], [single.w, sizeH], [0, sizeH]].map(([lx, ly]) => {
+            const dx = lx - px, dy = ly - py;
+            return {
+                x: X(P.x + dx * cos - dy * sin),
+                y: Y(P.y + dx * sin + dy * cos)
+            };
+        });
+    })();
+    const rad = single ? single.rotation * Math.PI / 180 : 0;
+    const upN = { x: Math.sin(rad), y: -Math.cos(rad) };      // 顶边外法线（屏幕方向）
+    const leftN = { x: -Math.cos(rad), y: -Math.sin(rad) };   // 左边外法线
+    const off = 18;
+    const [cTL, cTR, cBR, cBL] = corner;
+    // 尺寸线过分贴近视口边缘时翻到对侧，延伸线同步跟随
+    const normal = (p, n, s) => ({ x: p.x + n.x * off * s, y: p.y + n.y * off * s });
+    const vw = $('viewport').clientWidth;
+    let wA0 = cTL, wB0 = cTR;
+    let wA = normal(wA0, upN, 1), wB = normal(wB0, upN, 1);
+    if (Math.min(wA.y, wB.y) < 12) {
+        wA0 = cBL; wB0 = cBR;
+        wA = normal(wA0, upN, -1); wB = normal(wB0, upN, -1);
+    }
+    let hA0 = cTL, hB0 = cBL;
+    let hA = normal(hA0, leftN, 1), hB = normal(hB0, leftN, 1);
+    if (Math.min(hA.x, hB.x) < 12 || Math.max(hA.x, hB.x) > vw - 12) {
+        hA0 = cTR; hB0 = cBR;
+        hA = normal(hA0, leftN, -1); hB = normal(hB0, leftN, -1);
+    }
+    sizeLine(measureDimSeg(wA.x, wA.y, wB.x, wB.y));
+    // 延伸线：把尺寸线端点接回物件角点，旋转后也能看清对应哪条边
+    sizeExt(`M ${round2(wA0.x)} ${round2(wA0.y)} L ${round2(wA.x)} ${round2(wA.y)} M ${round2(wB0.x)} ${round2(wB0.y)} L ${round2(wB.x)} ${round2(wB.y)}`);
+    const tW = rotated ? 0.28 : 0.5;
+    addTag('', d => {
+        tagKey(d, 'W');
+        tagVal(d, sizeW, v => measureApplySize('w', v), '宽度');
+    }, round2(wA.x + (wB.x - wA.x) * tW), round2(wA.y + (wB.y - wA.y) * tW),
+        { mode: 'center', title: '宽度：点击数值可直接修改（↑↓ 微调，Shift 加速）' });
+
+    sizeLine(measureDimSeg(hA.x, hA.y, hB.x, hB.y));
+    sizeExt(`M ${round2(hA0.x)} ${round2(hA0.y)} L ${round2(hA.x)} ${round2(hA.y)} M ${round2(hB0.x)} ${round2(hB0.y)} L ${round2(hB.x)} ${round2(hB.y)}`);
+    addTag('', d => {
+        tagKey(d, 'H');
+        if (single && single.type === 'line') {
+            const s = measureText(d, String(Math.round(sizeH)));
+            s.title = '线条显示高度由粗细决定，请在「线条样式」中调整粗细';
+        } else tagVal(d, sizeH, v => measureApplySize('h', v), '高度');
+    }, round2((hA.x + hB.x) / 2), round2((hA.y + hB.y) / 2),
+        { mode: 'center', title: '高度：点击数值可直接修改（↑↓ 微调，Shift 加速）' });
+
+    if (rotated) {
+        const rx = X(rot.x), ry = Y(rot.y);
+        addTag('', d => {
+            tagKey(d, '∠');
             if (locked) measureText(d, angle + '°');
             else {
                 measureNum(d, angle, v => { $('geoR').value = v; updateGeo('r'); }, '旋转角度');
                 measureText(d, '°');
             }
-        }
+        }, rx, ry - 24, { mode: 'center', title: '旋转角度：点击数值可直接修改' });
+    }
+    /* ---- 2. 相邻物件间距（近处才标注，避免远处长线干扰） ---- */
+    const gaps = neighborGapsFor(box, state.model.elements, state.selection)
+        .filter(g => Math.abs(g.gap) * z <= MEASURE_LIMIT.gap)
+        .sort((a, b) => Math.abs(a.gap) - Math.abs(b.gap));
+    gaps.forEach(g => {
+        gapLine(g.axis === 'h'
+            ? measureDimH(X(g.x1), X(g.x2), Y(g.y))
+            : measureDimV(X(g.x), Y(g.y1), Y(g.y2)));
+        const ax = g.axis === 'h' ? (X(g.x1) + X(g.x2)) / 2 : X(g.x);
+        const ay = g.axis === 'h' ? Y(g.y) : (Y(g.y1) + Y(g.y2)) / 2;
+        const other = getEl(g.otherId);
+        const nm = other ? other.name : '相邻物件';
+        const title = `与「${nm}」的${GAP_SIDE_NAME[g.side]}侧间距` + (g.gap < 0 ? '（负值表示重叠）' : '') + '：点击数值可直接修改';
+        addTag('gap', d => {
+            tagKey(d, GAP_ARROW[g.side]);
+            tagVal(d, g.gap, v => applyNeighborGap(g, v), title);
+        }, round2(ax), round2(ay), { mode: 'above', title });
     });
-    const z = state.zoom || 1;
-    const avoid = [{ x: box.cx, y: sizeY }];
-    if (rot) avoid.push(rot);
-    // 与相邻物件的最近邻间距：测量线 + 端刻度 + 玫红数值标签
-    const gaps = neighborGapsFor(box, state.model.elements, state.selection);
-    if (gaps.length) {
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('class', 'measure-lines');
-        svg.setAttribute('aria-hidden', 'true');
-        gaps.forEach(g => {
-            const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            p.setAttribute('d', gapPathD(g, z, state.pan));
-            svg.appendChild(p);
-        });
-        layer.appendChild(svg);
-        gaps.forEach(g => {
-            const at = t => g.axis === 'h'
-                ? { x: g.x1 + (g.x2 - g.x1) * t, y: g.y }
-                : { x: g.x, y: g.y1 + (g.y2 - g.y1) * t };
-            const pos = pickTagPos(at, g.axis === 'h' ? { x: 0, y: 1 } : { x: 1, y: 0 }, avoid, z);
-            avoid.push(pos);
-            const other = getEl(g.otherId);
-            const label = '与「' + (other ? other.name : '') + '」的' + GAP_SIDE_NAME[g.side] + '间距' + (g.gap < 0 ? '（负值=重叠）' : '');
-            tag(pos.x, pos.y, d => {
-                if (locked) measureText(d, String(Math.round(g.gap)));
-                else measureNum(d, Math.round(g.gap), v => applyNeighborGap(g, v), label);
-            }, 'gap');
-        });
-    }
-    // 与最近邻居的边缘对齐差：橙色测量线 + 带符号可编辑数值（0=对齐）
-    const aligns = alignmentMeasures(box, state.model.elements, state.selection);
-    if (aligns.length) {
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('class', 'measure-lines align-lines');
-        svg.setAttribute('aria-hidden', 'true');
-        aligns.forEach(a => {
-            const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            p.setAttribute('d', gapPathD(a.line, z, state.pan));
-            svg.appendChild(p);
-        });
-        layer.appendChild(svg);
-        aligns.forEach(a => {
-            const at = t => a.line.axis === 'h'
-                ? { x: a.line.x1 + (a.line.x2 - a.line.x1) * t, y: a.line.y }
-                : { x: a.line.x, y: a.line.y1 + (a.line.y2 - a.line.y1) * t };
-            const pos = pickTagPos(at, a.line.axis === 'h' ? { x: 0, y: 1 } : { x: 1, y: 0 }, avoid, z);
-            avoid.push(pos);
-            const other = getEl(a.otherId);
-            const label = '与「' + (other ? other.name : '') + '」' + ALIGN_EDGE_NAME[a.edge] + '的对齐差（0=对齐，负=偏上/偏左）';
-            tag(pos.x, pos.y, d => {
-                if (locked) measureText(d, String(Math.round(a.delta)));
-                else measureNum(d, Math.round(a.delta), v => applyAlignDelta(a, v), label);
-            }, 'adist');
-        });
-    }
-    // 与最近辅助线的垂直距离：青色测量线 + 可编辑数值
-    const nearGuides = nearestGuidesToBox(box, 2);
-    if (nearGuides.length) {
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('class', 'measure-lines guide-lines');
-        svg.setAttribute('aria-hidden', 'true');
-        nearGuides.forEach(({ g, m }) => {
-            const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            p.setAttribute('d', guideSegPath(m, g, z, state.pan));
-            svg.appendChild(p);
-        });
-        layer.appendChild(svg);
-        nearGuides.forEach(({ g, m }) => {
-            const at = t => ({ x: m.from.x + (m.to.x - m.from.x) * t, y: m.from.y + (m.to.y - m.from.y) * t });
-            const pos = pickTagPos(at, guideGeom(g).dir, avoid, z);
-            avoid.push(pos);
-            const label = '与辅助线的垂直距离';
-            tag(pos.x, pos.y, d => {
-                if (locked) measureText(d, String(Math.round(m.dist)));
-                else measureNum(d, Math.round(m.dist), v => applyObjectGuideDistance(g, v), label);
-            }, 'gdist');
-        });
-    }
+
+    /* ---- 3. 边缘对齐差（0 时显示绿色“对齐”徽标） ---- */
+    const aligns = alignmentMeasures(box, state.model.elements, state.selection)
+        .filter(a => Math.abs(a.delta) * z <= MEASURE_LIMIT.align);
+    aligns.forEach(a => {
+        const lenPx = (a.line.axis === 'h' ? Math.abs(X(a.line.x2) - X(a.line.x1)) : Math.abs(Y(a.line.y2) - Y(a.line.y1)));
+        const aligned = Math.abs(a.delta) < 0.5;
+        if (!aligned && lenPx > 6) {
+            alignLine(a.line.axis === 'h'
+                ? measureDimH(X(a.line.x1), X(a.line.x2), Y(a.line.y), 3)
+                : measureDimV(X(a.line.x), Y(a.line.y1), Y(a.line.y2), 3));
+        }
+        const ax = a.line.axis === 'h' ? (X(a.line.x1) + X(a.line.x2)) / 2 : X(a.line.x);
+        const ay = a.line.axis === 'h' ? Y(a.line.y) : (Y(a.line.y1) + Y(a.line.y2)) / 2;
+        const other = getEl(a.otherId);
+        const title = `与「${other ? other.name : ''}」${ALIGN_EDGE_NAME[a.edge]}对齐差` +
+            (aligned ? '（已对齐）' : '（0=对齐，负=偏上/偏左）：点击数值可直接修改');
+        addTag('adist' + (aligned ? ' aligned' : ''), d => {
+            if (aligned) { tagKey(d, '✓'); measureText(d, '对齐'); }
+            else { tagKey(d, 'Δ'); tagVal(d, a.delta, v => applyAlignDelta(a, v), title); }
+        }, round2(ax), round2(ay), { mode: 'above', title });
+    });
+
+    /* ---- 4. 与辅助线的垂直距离 ---- */
+    nearestGuidesToBox(box, 2).filter(({ m }) => m.dist * z <= MEASURE_LIMIT.guide).forEach(({ g, m }) => {
+        guideLine(guideSegPath(m, g, z, state.pan));
+        const ax = (X(m.from.x) + X(m.to.x)) / 2, ay = (Y(m.from.y) + Y(m.to.y)) / 2;
+        addTag('gdist', d => {
+            tagKey(d, '↔');
+            tagVal(d, m.dist, v => applyObjectGuideDistance(g, v), '与辅助线的垂直距离');
+        }, round2(ax), round2(ay), { mode: 'above', title: '与辅助线的垂直距离：点击数值可直接修改' });
+    });
+
+    /* ---- 5. 画布边距（远距离用短引线，避免横穿整幅画布） ---- */
     if (single) {
-        // 边距标签避开旋转柄、尺寸标签与间距标签：沿所在边方向平移让位
-        const place = (x, y, axis, fill) => {
-            const hit = avoid.some(p => Math.abs(p.x - x) * z < 60 && Math.abs(p.y - y) * z < 26);
-            if (hit) {
-                if (axis === 'x') { const off = 72 / z; x = (x + off > cw - 24 / z) ? Math.max(24 / z, x - off) : x + off; }
-                else { const off = 44 / z; y = (y + off > ch - 18 / z) ? Math.max(18 / z, y - off) : y + off; }
-            }
-            tag(x, y, fill);
-        };
-        const dist = (x, y, axis, value, label, apply) => place(x, y, axis, d => {
-            if (locked) measureText(d, String(value));
-            else measureNum(d, value, apply, label);
-        });
         const moveBy = (dx, dy) => moveSelected(round2(dx), round2(dy));
-        dist(box.left / 2, box.cy, 'y', Math.round(box.left), '左边距',
-            v => moveBy(v - selectionAABB().left, 0));
-        dist((box.right + cw) / 2, box.cy, 'y', Math.round(cw - box.right), '右边距',
-            v => moveBy((cw - v) - selectionAABB().right, 0));
-        dist(box.cx, box.top / 2, 'x', Math.round(box.top), '上边距',
-            v => moveBy(0, v - selectionAABB().top));
-        dist(box.cx, (box.bottom + ch) / 2, 'x', Math.round(ch - box.bottom), '下边距',
-            v => moveBy(0, (ch - v) - selectionAABB().bottom));
+        const spec = [
+            { k: '左', v: box.left, dir: 'left', label: '左边距',
+              apply: v => moveBy(v - selectionAABB().left, 0) },
+            { k: '右', v: cw - box.right, dir: 'right', label: '右边距',
+              apply: v => moveBy((cw - v) - selectionAABB().right, 0) },
+            { k: '上', v: box.top, dir: 'top', label: '上边距',
+              apply: v => moveBy(0, v - selectionAABB().top) },
+            { k: '下', v: ch - box.bottom, dir: 'bottom', label: '下边距',
+              apply: v => moveBy(0, (ch - v) - selectionAABB().bottom) }
+        ].filter(m => m.v > 0.4);
+        const nearest = spec.slice().sort((a, b) => a.v - b.v).slice(0, 2);
+        spec.forEach(m => {
+            const near = m.v * z <= MEASURE_LIMIT.margin;
+            if (!near && nearest.indexOf(m) < 0) return;
+            const len = near ? m.v : Math.min(56 / z, m.v * 0.85);
+            let p1, p2;
+            if (m.dir === 'left') { p1 = { x: box.left - len, y: box.cy }; p2 = { x: box.left, y: box.cy }; }
+            else if (m.dir === 'right') { p1 = { x: box.right, y: box.cy }; p2 = { x: box.right + len, y: box.cy }; }
+            else if (m.dir === 'top') { p1 = { x: box.cx, y: box.top - len }; p2 = { x: box.cx, y: box.top }; }
+            else { p1 = { x: box.cx, y: box.bottom }; p2 = { x: box.cx, y: box.bottom + len }; }
+            const x1 = X(p1.x), x2 = X(p2.x), y1 = Y(p1.y), y2 = Y(p2.y);
+            if (m.dir === 'left' || m.dir === 'right') marginLine(measureDimH(x1, x2, y1, 3));
+            else marginLine(measureDimV(x1, y1, y2, 3));
+            addTag('margin', d => {
+                tagKey(d, m.k);
+                tagVal(d, m.v, m.apply, m.label);
+            }, round2((x1 + x2) / 2), round2((y1 + y2) / 2),
+                { mode: 'above', title: m.label + '（到画布边缘）：点击数值可直接修改' });
+        });
     }
+
+    // 统一排版：尺寸标签优先占位，其余标签依次避让
+    const seeds = [];
+    if (rotated && rot) {
+        const rx = X(rot.x), ry = Y(rot.y);
+        seeds.push({ l: rx - 9, r: rx + 9, t: ry - 9, b: ry + 9 });
+    }
+    layoutMeasureTags(pending, seeds);
 }
 
 /** 选中辅助线：显示法向两侧最近物件的距离，编辑时移动辅助线本身 */
@@ -3909,24 +4990,33 @@ function drawGuideSelectionMeasure(layer, g) {
         svg.appendChild(p);
     });
     layer.appendChild(svg);
-    const avoid = [];
+    const seeds = [];
     const ctrl = $('guideCtrl');
     if (ctrl) {
-        const cr = ctrl.getBoundingClientRect(), vr = $('viewport').getBoundingClientRect();
-        avoid.push({ x: (cr.left - vr.left + cr.width / 2 - state.pan.x) / z, y: (cr.top - vr.top + cr.height / 2 - state.pan.y) / z });
+        const vr = $('viewport').getBoundingClientRect();
+        const cr = ctrl.getBoundingClientRect();
+        seeds.push({ l: cr.left - vr.left, r: cr.right - vr.left, t: cr.top - vr.top, b: cr.bottom - vr.top });
     }
+    const pending = [];
     near.forEach(({ o, m }) => {
-        const at = t => ({ x: m.from.x + (m.to.x - m.from.x) * t, y: m.from.y + (m.to.y - m.from.y) * t });
-        const pos = pickTagPos(at, guideGeom(g).dir, avoid, z);
-        avoid.push(pos);
         const label = '辅助线与「' + o.name + '」的距离';
         const d = document.createElement('div');
         d.className = 'measure-tag gdist';
-        d.style.left = (pos.x * z + state.pan.x) + 'px';
-        d.style.top = (pos.y * z + state.pan.y) + 'px';
+        const k = document.createElement('span');
+        k.className = 'measure-key';
+        k.textContent = '↔';
+        d.appendChild(k);
         measureNum(d, Math.round(m.dist), v => applyGuideDistance(g, v, o.id), label);
+        d.title = label + '：点击数值可直接修改';
         layer.appendChild(d);
+        pending.push({
+            d,
+            cx: ((m.from.x + m.to.x) / 2) * z + state.pan.x,
+            cy: ((m.from.y + m.to.y) / 2) * z + state.pan.y,
+            mode: 'above'
+        });
     });
+    layoutMeasureTags(pending, seeds);
 }
 
 /* -------------------- N5 描边 / 阴影 / 混合模式 -------------------- */
@@ -3984,10 +5074,18 @@ function renderSwatches() {
     const rec = state.settings.recentColors.length ? state.settings.recentColors : PRESET_COLORS.slice(0, 8);
     rec.forEach(c => make(c, recent));
     PRESET_COLORS.concat(state.settings.palette).forEach(c => make(c, preset));
+    syncBucketSwatch();
 }
 function applySwatch(color) {
     if (!HEX_RE.test(color)) return;
     useColor(color);
+    // 颜料桶模式下色板只设定当前激活色槽的颜色，不改动选中元素或画布背景
+    if (state.tool === 'bucket') {
+        const slot = state.bucketSlot || 'fill';
+        setBucketColor(slot, color);
+        toast('已设为' + bucketSlotLabel(slot) + '色 ' + color.toUpperCase(), 'success');
+        return;
+    }
     const els = selectedEls().filter(e => !e.locked);
     if (!els.length) {
         $('bgColorPicker').value = color;
@@ -4139,6 +5237,7 @@ const ACTIONS = {
     toggleCard: arg => toggleCard(arg),
     setLineStyle: arg => setLineStyle(arg),
     setWavyDash: arg => setWavyDash(arg),
+    curveOp: arg => curveOp(arg),
     resetPivot: () => resetPivot()
 };
 
@@ -4376,7 +5475,9 @@ function buildSVG(opts) {
             const ln = el.line;
             const dash = ln.style === 'dashed' ? ` stroke-dasharray="${ln.width * 3} ${ln.width * 2}"`
                 : ln.style === 'dotted' ? ` stroke-dasharray="0.1 ${ln.width * 1.8}"` : '';
-            inner = `<path d="${curvePathD(el.curve, el.w, el.h)}" fill="none" stroke="${ln.color}" stroke-width="${ln.width}" stroke-linecap="round"${dash}/>`;
+            const fd = curveFillOn(el) ? fillDefs('g' + i, el.fill) : null;
+            if (fd && fd.def) defs.push(fd.def);
+            inner = `<path d="${curvePathD(el.curve, el.w, el.h)}" fill="${fd ? fd.ref : 'none'}" stroke="${ln.color}" stroke-width="${curveStrokeOn(el) ? ln.width : 0}" stroke-linecap="round"${dash}/>`;
         } else if (el.image && state.assets[el.image.assetId]) {
             inner = `<image x="0" y="0" width="${el.w}" height="${el.h}" preserveAspectRatio="none" href="${state.assets[el.image.assetId]}"/>`;
         } else {
@@ -4687,6 +5788,15 @@ function bindDelegates() {
         shadowY: () => applyStyleChange(),
         shadowBlur: () => applyStyleChange(),
         elAlphaInput: () => applyFillAlpha(),
+        curveFillEnabled: () => updateCurveFill(),
+        curveFillMode: () => updateCurveFill(),
+        curveFillColor: () => updateCurveFill(),
+        curveFillGradStart: () => updateCurveFill(),
+        curveFillGradEnd: () => updateCurveFill(),
+        curveFillAngle: () => updateCurveFill(),
+        curveFillAlpha: () => updateCurveFill(),
+        curveStrokeEnabled: () => updateCurveStroke(),
+        curveStrokeColor: () => updateCurveStroke(),
         exportFormat: () => updateExportSummary(),
         exportScope: () => updateExportSummary(),
         exportQuality: () => { $('exportQualityVal').textContent = $('exportQuality').value; updateExportSummary(); },
@@ -4713,6 +5823,14 @@ function bindDelegates() {
     };
     document.addEventListener('input', e => dispatch(e, false));
     document.addEventListener('change', e => dispatch(e, true));
+
+    [['bucketFillSlot', 'fill'], ['bucketStrokeSlot', 'stroke']].forEach(([id, slot]) => {
+        const n = $(id);
+        if (n) n.addEventListener('click', e => { e.stopPropagation(); openBucketPicker(slot); });
+    });
+    const bucketColor = $('bucketColorInput');
+    if (bucketColor) bucketColor.addEventListener('change', () => setBucketColor(state.bucketSlot || 'fill', bucketColor.value));
+    document.addEventListener('mouseleave', () => { if (state.tool === 'bucket') hideBucketHover(); });
 
     $('imageInput').addEventListener('change', e => handleImageUpload(e.target));
     $('cropFileInput').addEventListener('change', e => handleCropFile(e.target));
@@ -4959,12 +6077,48 @@ function runSelfTest() {
     });
     check('曲线元素与路径', () => {
         const el = buildElement('curve', 0, 0);
-        assert(el.curve && typeof el.curve.cx1 === 'number', '曲线控制点缺失');
+        assert(el.curve && Array.isArray(el.curve.nodes) && el.curve.nodes.length >= 2, '曲线节点缺失');
         const d = curvePathD(el.curve, el.w, el.h);
         assert(d.startsWith('M ') && d.includes(' C '), '路径数据异常');
         const v = validateElement(el);
-        assert(v.type === 'curve' && v.curve && v.line, '校验往返丢失曲线');
-        return '贝塞尔四点模型';
+        assert(v.type === 'curve' && v.curve.nodes.length === el.curve.nodes.length && v.line, '校验往返丢失曲线');
+        // 旧版单段四点曲线存档（v3）自动迁移为两节点路径
+        const legacy = validateElement({
+            id: 'el_legacy', type: 'curve', x: 0, y: 0, w: 100, h: 100,
+            curve: { x1: 0, y1: 1, cx1: 0.3, cy1: 0, cx2: 0.7, cy2: 1, x2: 1, y2: 0 },
+            line: { width: 2 }
+        });
+        assert(legacy.curve.nodes.length === 2 && legacy.curve.nodes[0].ox === 0.3, '旧版曲线未迁移');
+        // De Casteljau 分割：插入节点后形状不变（分割点落在曲线上）
+        const pts = curveSegPts(legacy.curve.nodes, 0, 1, legacy.w, legacy.h);
+        const sp = splitCubic(pts, 0.5);
+        const expect = cubicAt(pts[0], pts[1], pts[2], pts[3], 0.5);
+        assert(Math.abs(sp.mid.x - expect.x) < 0.001 && Math.abs(sp.mid.y - expect.y) < 0.001, '节点分割点偏离曲线');
+        return el.curve.nodes.length + ' 节点 · 兼容旧版·可闭合';
+    });
+    check('闭合曲线填充', () => {
+        const el = buildElement('curve', 0, 0);
+        el.curve.closed = true;
+        assert(!curveFillOn(el), '旧存档默认应保持只描边');
+        el.curve.filled = true;
+        el.fill = makeFill({ mode: 'solid', color: '#ff0000' });
+        assert(curveFillOn(el), '填充启用标记未生效');
+        const svg = buildSVG({ bounds: { x: 0, y: 0, w: el.w, h: el.h }, elements: [el], transparent: true });
+        assert(svg.toLowerCase().includes('fill="#ff0000"'), 'SVG 导出缺少曲线填充');
+        const open = buildElement('curve', 0, 0);
+        open.curve.filled = true;
+        assert(!curveFillOn(open), '开放路径不应填充');
+        return '闭合可填充 · 开放只描边 · 旧存档兼容';
+    });
+    check('颜料桶双色槽与曲线描边', () => {
+        const el = buildElement('curve', 0, 0);
+        assert(el.curve.strokeOn !== false, '旧存档默认应显示描边');
+        el.curve.strokeOn = false;
+        assert(!curveStrokeOn(el), '描边开关未生效');
+        const svg = buildSVG({ bounds: { x: 0, y: 0, w: el.w, h: el.h }, elements: [el], transparent: true });
+        assert(svg.includes('stroke-width="0"'), 'SVG 导出未遵循描边开关');
+        assert(HEX_RE.test(bucketColor('fill')) && HEX_RE.test(bucketColor('stroke')), '双色槽取值异常');
+        return '填充 / 描边双色 · 描边开关 · 导出一致';
     });
     check('旋转中心（枢轴）', () => {
         const el = buildElement('rect', 100, 100);
@@ -5094,15 +6248,16 @@ function runSelfTest() {
         const al = alignmentMeasures(box, [mk('S', 400, 430, 200, 200)], []);
         const by = {};
         al.forEach(a => { by[a.edge] = a; });
+        assert(al.length === 2, '每个方向只保留差值更小的一条边');
         assert(by.top && by.top.delta === -130, '顶边对齐差错误');
-        assert(by.bottom && by.bottom.delta === -326, '底边对齐差应为带符号值');
-        assert(by.left && by.left.delta === -300 && by.right && by.right.delta === -400, '水平边缘对齐差错误');
+        assert(by.left && by.left.delta === -300, '左边对齐差错误');
+        assert(!by.bottom && !by.right, '差值更大的边不应重复标注');
         assert(al.every(a => a.otherId === 'S'), '斜向邻居也应参与对齐测距');
         const hidden = alignmentMeasures(box, [Object.assign(mk('H', 400, 430, 200, 200), { visible: false })], []);
         assert(hidden.length === 0, '隐藏物件不应参与对齐');
         const selfOnly = alignmentMeasures(box, [mk('X', 100, 300, 100, 4)], ['X']);
         assert(selfOnly.length === 0, '排除选区后无邻居');
-        return '四边带符号对齐差 · 斜向邻居 · 隐藏/排除跳过';
+        return '每向单边带符号对齐差 · 斜向邻居 · 隐藏/排除跳过';
     });
     check('辅助线与测距', () => {
         const gH = validateGuide({ id: 'g_h', angle: 0, x: 0, y: 100 });
@@ -5200,8 +6355,20 @@ function bindHotkeys() {
         if (!ctrl && !e.altKey && (e.key === 'v' || e.key === 'V')) { setTool('select'); return; }
         if (!ctrl && !e.altKey && (e.key === 'h' || e.key === 'H')) { setTool('pan'); return; }
         if (!ctrl && !e.altKey && (e.key === 't' || e.key === 'T')) { setTool('text'); return; }
+        if (!ctrl && !e.altKey && (e.key === 'p' || e.key === 'P')) { setTool(state.tool === 'pen' ? 'select' : 'pen'); return; }
+        if (!ctrl && !e.altKey && (e.key === 'b' || e.key === 'B')) { setTool('bucket'); return; }
         if (!ctrl && !e.altKey && (e.key === 'r' || e.key === 'R')) { addShape('rect'); return; }
-        if (!ctrl && !e.altKey && (e.key === 'c' || e.key === 'C')) { addShape('curve'); return; }
+        if (state.pen) {
+            if (e.key === 'Enter') { e.preventDefault(); finishPen(false); return; }
+            if (e.key === 'Escape') { e.preventDefault(); cancelPen(); return; }
+            if (e.key === 'Backspace') {
+                e.preventDefault();
+                if (state.pen.nodes.length > 1) state.pen.nodes.pop();
+                else cancelPen();
+                renderPenDraft();
+                return;
+            }
+        }
         if (!ctrl && !e.altKey && (e.key === 'Enter' || e.key === 'F2')) {
             const els = selectedEls();
             if (els.length === 1 && els[0].type === 'text' && !els[0].locked) { e.preventDefault(); startTextEdit(els[0]); }
