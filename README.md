@@ -4,13 +4,17 @@
 
 Canvas Studio 是一个运行在浏览器里的画布编辑器：无需构建、无需安装、无需联网，所有数据只保存在本机。打开 `index.html` 即可开始设计。
 
+**在线使用：<https://peteliao.github.io/canvas-studio/>** —— 打开即用，无需下载安装。
+
 ## 快速开始
 
-**方式一：直接打开**
+**在线版（推荐）**
 
-双击 `index.html`（推荐使用最新版 Chrome / Edge）。
+直接打开 <https://peteliao.github.io/canvas-studio/>。
 
-**方式二：本地服务器（可选）**
+**本地运行**
+
+双击 `index.html`（推荐使用最新版 Chrome / Edge），或启动本地服务器：
 
 ```bash
 python -m http.server 8080
@@ -18,6 +22,8 @@ python -m http.server 8080
 ```
 
 没有依赖、没有构建步骤，整个应用只有三个文件。
+
+> 在线版与本地版的数据相互独立：画布存档保存在各自地址（origin）的浏览器本地存储中，互不影响。
 
 ## 功能总览
 
@@ -125,6 +131,8 @@ python -m http.server 8080
 ├── index.html   # 页面结构、SVG 图标与全部对话框
 ├── script.js    # 全部逻辑（IIFE 封装：模型 → 渲染 → 历史 → 自动存档）
 ├── style.css    # 浅色 / 深色主题与全部样式
+├── README.md
+├── .nojekyll    # GitHub Pages 直接托管静态文件
 └── .gitignore
 ```
 
