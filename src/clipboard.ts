@@ -1,0 +1,124 @@
+/* 系统剪贴板与拖放导入 */
+import { VERSION } from './constants';
+import type { CanvasElement } from './types';
+import { state } from './state';
+import { $, toast, uid, deepCopy, round2, readFileAsDataURL, loadImage } from './utils';
+import { validateElement, selectedEls, nextZIndex, buildElement, makeText, makeImage } from './model';
+import { putAsset } from './db';
+import { renderAll } from './render';
+import { setSelection } from './selection';
+import { commit } from './history';
+import { clientToWorld } from './interaction';
+import { canvasCenterFor } from './view';
+import { importProjectFile } from './project';
+
+function serialFromElements(els: CanvasElement[]): string {
+    return JSON.stringify({ kind: 'canvas-studio-elements', version: VERSION, elements: els });
+}
+function elementsFromSerial(text: string): CanvasElement[] | null {
+    try {
+        const o = JSON.parse(text) as { kind?: string; elements?: unknown[] } | null;
+        if (!o || o.kind !== 'canvas-studio-elements' || !Array.isArray(o.elements)) return null;
+        const seen = new Set<string>();
+        return o.elements.slice(0, 200).map(e => validateElement(e)).map(e => {
+            if (seen.has(e.id)) e.id = uid('el'); seen.add(e.id); return e;
+        });
+    } catch { return null; }
+}
+export async function copyToClipboardSystem(): Promise<void> {
+    if (!state.selection.length) return;
+    state.clipboard = selectedEls().map(deepCopy);
+    const text = serialFromElements(state.clipboard);
+    try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+            toast(`已复制 ${state.clipboard.length} 个元素（可跨项目粘贴）`, 'success');
+        } else toast(`已复制 ${state.clipboard.length} 个元素（应用内剪贴板）`, 'success');
+    } catch { toast(`已复制 ${state.clipboard.length} 个元素（应用内剪贴板）`, 'success'); }
+}
+export async function pasteFromClipboardSystem(): Promise<void> {
+    let parsed: CanvasElement[] | null = null;
+    try {
+        if (navigator.clipboard && navigator.clipboard.readText) {
+            const text = await navigator.clipboard.readText();
+            parsed = elementsFromSerial(text);
+        }
+    } catch { /* 权限受限，回退应用内剪贴板 */ }
+    const src = parsed || state.clipboard;
+    if (!src || !src.length) { toast('剪贴板中没有可粘贴的元素', 'error'); return; }
+    const clones = src.map(e => {
+        const c = validateElement(deepCopy(e));
+        c.id = uid('el'); c.x = round2(c.x + 20); c.y = round2(c.y + 20);
+        c.zIndex = nextZIndex(); c.locked = false; return c;
+    });
+    state.model.elements.push(...clones);
+    renderAll(); setSelection(clones.map(c => c.id)); commit();
+    toast(`已粘贴 ${clones.length} 个元素`, 'success');
+}
+async function insertImageFileAt(file: File, clientX?: number, clientY?: number): Promise<boolean> {
+    if (!file || !/^image\//.test(file.type)) return false;
+    try {
+        const dataURL = await readFileAsDataURL(file);
+        const img = await loadImage(dataURL);
+        const max = 400;
+        let w = img.width, h = img.height;
+        if (w > max || h > max) { const k = max / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k); }
+        const assetId = uid('asset');
+        await putAsset(assetId, dataURL);
+        const el = buildElement('image', 0, 0);
+        el.w = w; el.h = h;
+        el.image = makeImage({ assetId, originalAssetId: assetId });
+        el.name = file.name.slice(0, 60);
+        const world = clientX === undefined ? canvasCenterFor(w, h) : clientToWorld(clientX, clientY!);
+        el.x = round2(world.x - (clientX === undefined ? w / 2 : 0));
+        el.y = round2(world.y - (clientX === undefined ? h / 2 : 0));
+        state.model.elements.push(el);
+        renderAll(); setSelection([el.id]); commit();
+        toast('图片已导入，双击可裁剪', 'success');
+        return true;
+    } catch (err) { toast('图片导入失败：' + (err as Error).message, 'error'); return false; }
+}
+function insertTextAt(text: string, clientX?: number, clientY?: number): void {
+    const el = buildElement('text', 0, 0);
+    el.text = makeText({ runs: [{ text: String(text).slice(0, 2000) }] });
+    const pos = clientX === undefined ? canvasCenterFor(el.w, 60) : clientToWorld(clientX, clientY!);
+    el.x = round2(pos.x); el.y = round2(pos.y);
+    state.model.elements.push(el);
+    renderAll(); setSelection([el.id]); commit();
+}
+export function bindDropImport(): void {
+    const vp = $('viewport');
+    (['dragenter', 'dragover'] as const).forEach(t => vp.addEventListener(t, e => {
+        e.preventDefault(); e.stopPropagation();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+        vp.classList.add('drag-over');
+    }));
+    vp.addEventListener('dragleave', e => {
+        if (!vp.contains(e.relatedTarget as Node | null)) vp.classList.remove('drag-over');
+    });
+    vp.addEventListener('drop', e => {
+        void (async () => {
+            e.preventDefault(); e.stopPropagation();
+            vp.classList.remove('drag-over');
+            const dt = e.dataTransfer; if (!dt) return;
+            const files = Array.from(dt.files || []);
+            if (files.length) {
+                for (const f of files) {
+                    if (/^image\//.test(f.type)) { await insertImageFileAt(f, e.clientX, e.clientY); continue; }
+                    if (/\.(canvas|json)$/i.test(f.name) || f.type === 'application/json') { await importProjectFile(f); continue; }
+                    if (/^text\//.test(f.type) || /\.txt$/i.test(f.name)) {
+                        insertTextAt(await f.text(), e.clientX, e.clientY); continue;
+                    }
+                    toast('不支持的文件类型：' + f.name, 'error');
+                }
+                return;
+            }
+            const text = dt.getData('text/plain');
+            if (text) {
+                const els = elementsFromSerial(text);
+                if (els) { state.clipboard = els; await pasteFromClipboardSystem(); }
+                else insertTextAt(text, e.clientX, e.clientY);
+            }
+        })();
+    });
+}

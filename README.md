@@ -1,8 +1,8 @@
 # Canvas Studio
 
-> 零依赖 · 完全离线 · 开箱即用的单页画布编辑器
+> 完全离线 · 零运行时依赖 · 开箱即用的单页画布编辑器
 
-Canvas Studio 是一个运行在浏览器里的画布编辑器：无需构建、无需安装、无需联网，所有数据只保存在本机。打开 `index.html` 即可开始设计。
+Canvas Studio 是一个运行在浏览器里的画布编辑器：无需联网，所有数据只保存在本机。在线版打开即用；源码使用 TypeScript（严格模式）编写，按模块组织，由 Vite 构建。
 
 **在线使用：<https://peteliao.github.io/canvas-studio/>** —— 打开即用，无需下载安装。
 
@@ -12,16 +12,22 @@ Canvas Studio 是一个运行在浏览器里的画布编辑器：无需构建、
 
 直接打开 <https://peteliao.github.io/canvas-studio/>。
 
-**本地运行**
+**本地开发**
 
-双击 `index.html`（推荐使用最新版 Chrome / Edge），或启动本地服务器：
+需要 Node.js 18+：
 
 ```bash
-python -m http.server 8080
-# 浏览器打开 http://localhost:8080
+npm install     # 安装开发依赖（仅 TypeScript 与 Vite，应用本身零运行时依赖）
+npm run dev     # 启动开发服务器，默认 http://localhost:5173，支持热更新
 ```
 
-没有依赖、没有构建步骤，整个应用只有三个文件。
+**构建与预览**
+
+```bash
+npm run build     # 严格类型检查 + 生产构建，输出到 dist/
+npm run preview   # 本地预览构建产物
+npm run typecheck # 仅运行 TypeScript 严格类型检查
+```
 
 > 在线版与本地版的数据相互独立：画布存档保存在各自地址（origin）的浏览器本地存储中，互不影响。
 
@@ -160,19 +166,36 @@ python -m http.server 8080
 ## 项目结构
 
 ```
-├── index.html   # 页面结构、SVG 图标与全部对话框
-├── script.js    # 全部逻辑（IIFE 封装：模型 → 渲染 → 历史 → 自动存档）
-├── style.css    # 浅色 / 深色主题与全部样式
-├── favicon.svg  # 品牌标徽（矢量主图，现代浏览器优先使用）
+├── index.html        # 页面结构、SVG 图标与全部对话框（入口挂载 /src/main.ts）
+├── style.css         # 浅色 / 深色主题与全部样式
+├── src/              # TypeScript 源码（严格模式，零 any）
+│   ├── main.ts       # 启动入口
+│   ├── types.ts      # 全部数据模型与交互状态类型
+│   ├── constants.ts  # 常量、预设与快捷键表
+│   ├── state.ts      # 全局状态与 DOM 节点缓存
+│   ├── model.ts      # 数据校验、旧版迁移、元素工厂
+│   ├── db.ts         # localStorage 设置与 IndexedDB 素材/项目/版本
+│   ├── history.ts    # 撤销 / 重做 / 自动保存
+│   ├── render.ts     # DOM 渲染与文本排版
+│   ├── interaction.ts# 指针交互：拖拽 / 缩放 / 旋转 / 钢笔 / 节点
+│   ├── exporter.ts   # PNG / JPEG / WebP / PDF 画布导出
+│   ├── vector-export.ts # SVG 矢量导出与 PDF 封装
+│   └── ...           # 面板、图层、样式、标注、裁剪、项目等模块
+├── favicon.svg       # 品牌标徽（矢量主图，现代浏览器优先使用）
 ├── favicon.ico / favicon-16.png / favicon-32.png  # 标徽位图回退
 ├── apple-touch-icon.png  # iOS 主屏图标（180×180）
+├── package.json / tsconfig.json / vite.config.ts  # 开发工具链配置
+├── .github/workflows/deploy.yml  # 推送 main 自动构建并发布 GitHub Pages
 ├── README.md
-├── .nojekyll    # GitHub Pages 直接托管静态文件
 └── .gitignore
 ```
 
 - 数据格式 schema v4（兼容 v2 / v3 存档），带校验与旧版本自动迁移
-- 无框架、无构建、无外部资源，修改任意文件后刷新即生效
+- 无框架、零运行时依赖、无外部资源；TypeScript 完全严格模式，Vite 开发热更新、构建产物为纯静态文件
+
+## 部署
+
+推送到 `main` 分支后，GitHub Actions 自动执行类型检查与构建，并把 `dist/` 发布到 GitHub Pages（仓库 Settings → Pages 的 Source 需设为 **GitHub Actions**）。
 
 ## 内置自检
 
