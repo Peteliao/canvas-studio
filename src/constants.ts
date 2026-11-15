@@ -1,4 +1,4 @@
-import type { BlendMode, CurveNodeType, ElementType, FillMode, FontWeight, LineStyle, StrokeStyle, TextAlign } from './types';
+import type { BlendMode, CurveNodeType, ElementType, FillMode, FontWeight, LineStyle, Shadow, ShadowType, StrokeStyle, TextAlign } from './types';
 
 export const VERSION = 4;
 export const COMPAT_VERSIONS = [2, 3, 4];   // v2 旧格式 / v3 单段曲线 / v4 多节点贝塞尔
@@ -20,6 +20,7 @@ export const FILL_MODES: FillMode[] = ['solid', 'linear', 'radial', 'conic'];
 export const LINE_STYLES: LineStyle[] = ['solid', 'dashed', 'dotted', 'wavy'];
 export const TEXT_ALIGNS: TextAlign[] = ['left', 'center', 'right', 'justify'];
 export const STROKE_STYLES: StrokeStyle[] = ['solid', 'dashed', 'dotted'];
+export const SHADOW_TYPES: ShadowType[] = ['drop', 'glow'];
 export const BLEND_MODES: BlendMode[] = ['normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten', 'difference'];
 export const TYPE_LABELS: Record<ElementType | 'group', string> = { rect: '矩形', circle: '圆形', triangle: '三角形', star: '五角星', arrow: '箭头', line: '线条', curve: '曲线', text: '文本', image: '图片', boolean: '布尔图形', group: '组合' };
 export const TYPE_ICONS: Record<ElementType, string> = { rect: 'square', circle: 'circle', triangle: 'triangle', star: 'star', arrow: 'arrow', line: 'line', curve: 'curve', text: 'font', image: 'image', boolean: 'union' };
@@ -66,6 +67,14 @@ export const TEXT_PRESETS: TextPreset[] = [
     { label: '正文', size: 18, weight: 400, color: '#1c2230' },
     { label: '强调蓝', size: 32, weight: 700, color: '#4f6bff' }
 ];
+
+// 投影一键预设（enabled 由应用时置 true）；glow 为零偏移发光
+export const SHADOW_PRESETS: Record<string, Omit<Shadow, 'enabled'>> = {
+    soft: { type: 'drop', color: '#000000', x: 0, y: 12, blur: 24, opacity: 0.35 },
+    hard: { type: 'drop', color: '#000000', x: 6, y: 6, blur: 0, opacity: 0.55 },
+    long: { type: 'drop', color: '#000000', x: -28, y: 28, blur: 6, opacity: 0.4 },
+    neon: { type: 'glow', color: '#3b82f6', x: 0, y: 0, blur: 22, opacity: 0.9 }
+};
 
 export const SHORTCUTS: [string, string][] = [
     ['撤销 / 重做', 'Ctrl+Z / Ctrl+Y'], ['复制 / 粘贴', 'Ctrl+C / Ctrl+V'],

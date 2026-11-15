@@ -1,11 +1,11 @@
 /* 内置自检 */
-import { VERSION, DB_NAME, HEX_RE } from './constants';
+import { VERSION, DB_NAME, HEX_RE, SHADOW_PRESETS } from './constants';
 import type { CanvasElement, AABB } from './types';
 import { state } from './state';
 import { $, iconEl } from './utils';
-import { validateProject, snapshotJSON, makeFill, makeLine, makeStroke, makeText, buildElement, validateElement,
+import { validateProject, snapshotJSON, makeFill, makeLine, makeStroke, makeShadow, makeText, buildElement, validateElement,
     curvePathD, curveFillOn, curveStrokeOn, validateGuide, curveSegPts, splitCubic, cubicAt, sortedElements } from './model';
-import { fillToCSS, lineHeightFor, wavyDashSpec, wavyDataURI, strokeOverlayMarkup } from './style';
+import { fillToCSS, shapeFilter, lineHeightFor, wavyDashSpec, wavyDataURI, strokeOverlayMarkup } from './style';
 import { buildSVG, buildPDF } from './vector-export';
 import { getAABB, setPivot } from './geometry';
 import { textMeasureCtx, canvasTextWidth, applyAutoSize } from './render';
@@ -117,6 +117,21 @@ export function runSelfTest(): void {
         const ln = buildElement('line', 0, 0);
         assert(!applyBucketColor(ln, 'stroke', 'none'), '线条不应支持无描边');
         return '取色 · 无填充/无描边 · 重新上色恢复';
+    });
+    check('投影增强（类型/不透明度/发光/预设）', () => {
+        const legacy = makeShadow({ enabled: true, color: '#000000', x: 8, y: 8, blur: 16 });
+        assert(legacy.type === 'drop' && legacy.opacity === 0.72, '旧存档投影默认值异常');
+        const el = buildElement('rect', 0, 0);
+        el.shadow = makeShadow({ enabled: true, type: 'drop', color: '#123456', x: 10, y: 0, blur: 8, opacity: 0.5 });
+        const css = shapeFilter(el);
+        assert(css.includes('drop-shadow(10px 0px 8px') && css.includes('0.5'), '画布投影未用自定义不透明度');
+        el.shadow = makeShadow({ enabled: true, type: 'glow', color: '#123456', x: 10, y: 20, blur: 8, opacity: 0.9 });
+        assert(shapeFilter(el).includes('drop-shadow(0px 0px 8px'), '发光应零偏移');
+        const svg = buildSVG({ bounds: { x: 0, y: 0, w: el.w, h: el.h }, elements: [el], transparent: true });
+        assert(svg.includes('dx="0"') && svg.includes('flood-opacity="0.9"'), 'SVG 发光/不透明度异常');
+        ['soft', 'hard', 'long', 'neon'].forEach(k => assert(!!SHADOW_PRESETS[k], '缺少预设 ' + k));
+        assert(SHADOW_PRESETS.neon.type === 'glow', '霓虹预设应为发光');
+        return 'drop/glow · 不透明度 · 旧存档兼容 · 4 预设';
     });
     check('旋转中心（枢轴）', () => {
         const el = buildElement('rect', 100, 100);

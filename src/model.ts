@@ -1,7 +1,7 @@
 /* 模型与 schema 校验：所有存档/历史/项目文件的统一入口 */
 import {
     VERSION, COMPAT_VERSIONS, TYPES, FILL_MODES, LINE_STYLES, TEXT_ALIGNS, STROKE_STYLES,
-    BLEND_MODES, TYPE_LABELS, MAX_CANVAS_SIDE, MAX_CURVE_NODES, CURVE_NODE_TYPES, DATA_IMAGE_RE
+    BLEND_MODES, SHADOW_TYPES, TYPE_LABELS, MAX_CANVAS_SIDE, MAX_CURVE_NODES, CURVE_NODE_TYPES, DATA_IMAGE_RE
 } from './constants';
 import type {
     Fill, Stroke, Shadow, TextStyle, TextRun, LineSpec, Curve, CurveNode, ImageRef,
@@ -41,10 +41,12 @@ export function makeShadow(raw: unknown): Shadow {
     const o = asRecord(raw);
     return {
         enabled: !!o.enabled,
+        type: enumOf(SHADOW_TYPES, o.type, 'drop'),
         color: validColor(o.color, '#000000'),
         x: clamp(finite(o.x, 8), -100, 100),
         y: clamp(finite(o.y, 8), -100, 100),
-        blur: clamp(finite(o.blur, 16), 0, 120)
+        blur: clamp(finite(o.blur, 16), 0, 120),
+        opacity: clamp(finite(o.opacity, 0.72), 0, 1)
     };
 }
 function makeRun(raw: unknown): TextRun {

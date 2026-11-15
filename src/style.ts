@@ -30,7 +30,8 @@ export function shapeFilter(el: CanvasElement): string {
     }
     const sh = el.shadow;
     if (sh && sh.enabled) {
-        parts.push(`drop-shadow(${sh.x}px ${sh.y}px ${sh.blur}px ${hexToRgba(sh.color, .72)})`);
+        const ox = sh.type === 'glow' ? 0 : sh.x, oy = sh.type === 'glow' ? 0 : sh.y;
+        parts.push(`drop-shadow(${ox}px ${oy}px ${sh.blur}px ${hexToRgba(sh.color, sh.opacity)})`);
     }
     return parts.join(' ');
 }

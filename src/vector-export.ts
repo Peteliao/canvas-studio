@@ -56,7 +56,7 @@ export function buildSVG(opts: SVGExportOpts): string {
         const opacity = ` opacity="${el.opacity}"`;
         const blend = el.blendMode && el.blendMode !== 'normal' ? ` style="mix-blend-mode:${el.blendMode}"` : '';
         const shadow = el.shadow && el.shadow.enabled
-            ? `<filter id="sh${i}"><feDropShadow dx="${el.shadow.x}" dy="${el.shadow.y}" stdDeviation="${el.shadow.blur / 3}" flood-color="${el.shadow.color}" flood-opacity="0.72"/></filter>` : '';
+            ? `<filter id="sh${i}"><feDropShadow dx="${el.shadow.type === 'glow' ? 0 : el.shadow.x}" dy="${el.shadow.type === 'glow' ? 0 : el.shadow.y}" stdDeviation="${el.shadow.blur / 3}" flood-color="${el.shadow.color}" flood-opacity="${el.shadow.opacity}"/></filter>` : '';
         if (shadow) defs.push(shadow);
         const filter = shadow ? ` filter="url(#sh${i})"` : '';
         let inner = '';

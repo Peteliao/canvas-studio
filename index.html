@@ -496,10 +496,22 @@
                   </select>
                 </div>
                 <label class="switch-row"><input type="checkbox" id="shadowEnabled"><span>启用投影</span></label>
+                <div class="control-row"><span class="control-label">类型</span><select id="shadowType" aria-label="投影类型"><option value="drop">外投影</option><option value="glow">发光</option></select></div>
                 <div class="control-row"><span class="control-label">投影色</span><input type="color" id="shadowColor" value="#000000" aria-label="投影颜色"></div>
-                <div class="control-row"><span class="control-label">偏移 X</span><input type="range" id="shadowX" min="-50" max="50" value="8" aria-label="投影 X 偏移"><span class="value-tag" id="shadowXVal">8</span></div>
-                <div class="control-row"><span class="control-label">偏移 Y</span><input type="range" id="shadowY" min="-50" max="50" value="8" aria-label="投影 Y 偏移"><span class="value-tag" id="shadowYVal">8</span></div>
+                <div id="shadowOffsetRows">
+                  <div class="control-row"><span class="control-label">偏移 X</span><input type="range" id="shadowX" min="-100" max="100" value="8" aria-label="投影 X 偏移"><span class="value-tag" id="shadowXVal">8</span></div>
+                  <div class="control-row"><span class="control-label">偏移 Y</span><input type="range" id="shadowY" min="-100" max="100" value="8" aria-label="投影 Y 偏移"><span class="value-tag" id="shadowYVal">8</span></div>
+                  <div class="control-row"><span class="control-label">角度</span><input type="range" id="shadowAngle" min="0" max="360" value="45" aria-label="投影角度"><span class="value-tag" id="shadowAngleVal">45°</span></div>
+                  <div class="control-row"><span class="control-label">距离</span><input type="range" id="shadowDistance" min="0" max="140" value="11" aria-label="投影距离"><span class="value-tag" id="shadowDistanceVal">11</span></div>
+                </div>
                 <div class="control-row"><span class="control-label">模糊</span><input type="range" id="shadowBlur" min="0" max="80" value="16" aria-label="投影模糊"><span class="value-tag" id="shadowBlurVal">16</span></div>
+                <div class="control-row"><span class="control-label">不透明度</span><input type="range" id="shadowOpacity" min="0" max="100" value="72" aria-label="投影不透明度"><span class="value-tag" id="shadowOpacityVal">72%</span></div>
+                <div class="shadow-presets">
+                  <button class="mini-btn" data-act="shadowPreset" data-arg="soft" data-keepfocus title="柔和悬浮投影">柔和悬浮</button>
+                  <button class="mini-btn" data-act="shadowPreset" data-arg="hard" data-keepfocus title="硬边投影">硬边</button>
+                  <button class="mini-btn" data-act="shadowPreset" data-arg="long" data-keepfocus title="长阴影">长阴影</button>
+                  <button class="mini-btn" data-act="shadowPreset" data-arg="neon" data-keepfocus title="霓虹发光">霓虹发光</button>
+                </div>
               </div>
             </section>
 

@@ -1,4 +1,4 @@
-import { HEX_RE, PRESET_COLORS, SHAPE_PRESETS, TEXT_PRESETS, TYPE_ICONS } from './constants';
+import { HEX_RE, PRESET_COLORS, SHAPE_PRESETS, SHADOW_PRESETS, TEXT_PRESETS, TYPE_ICONS } from './constants';
 import type { ShapePreset, TextPreset } from './constants';
 import { state } from './state';
 import { $, clamp, finite, iconEl, round2, toast } from './utils';
@@ -11,7 +11,7 @@ import { saveSettings } from './db';
 import { bucketSlotLabel, setBucketColor, syncBucketSwatch } from './bucket';
 import { updateCanvasBg } from './styles';
 import { startTextEdit } from './richtext';
-import type { BlendMode } from './types';
+import type { BlendMode, ShadowType } from './types';
 
 interface EyeDropperResult { sRGBHex: string; }
 declare global {
@@ -37,9 +37,13 @@ export function syncStyleControls(): void {
     $('strokeWidthVal').textContent = String(st.width); $<HTMLSelectElement>('strokeStyle').value = st.style;
     $<HTMLSelectElement>('blendMode').value = el.blendMode || 'normal';
     $<HTMLInputElement>('shadowEnabled').checked = !!sh.enabled; $<HTMLInputElement>('shadowColor').value = sh.color;
+    $<HTMLSelectElement>('shadowType').value = sh.type;
     $<HTMLInputElement>('shadowX').value = String(sh.x); $('shadowXVal').textContent = String(sh.x);
     $<HTMLInputElement>('shadowY').value = String(sh.y); $('shadowYVal').textContent = String(sh.y);
     $<HTMLInputElement>('shadowBlur').value = String(sh.blur); $('shadowBlurVal').textContent = String(sh.blur);
+    $<HTMLInputElement>('shadowOpacity').value = String(Math.round(sh.opacity * 100)); $('shadowOpacityVal').textContent = Math.round(sh.opacity * 100) + '%';
+    syncShadowPolar(sh.x, sh.y);
+    syncShadowOffsetRows(sh.type);
     $<HTMLInputElement>('elAlphaInput').value = String(Math.round((el.fill.alpha === undefined ? 1 : el.fill.alpha) * 100));
     $('elAlphaVal').textContent = $<HTMLInputElement>('elAlphaInput').value + '%';
     $<HTMLInputElement>('elColorHex').value = el.fill.color.toUpperCase();
@@ -49,16 +53,58 @@ export function applyStyleChange(): void {
     const els = selectedEls().filter(e => !e.locked);
     if (!els.length) return;
     const st = makeStroke({ color: $<HTMLInputElement>('strokeColor').value, width: $<HTMLInputElement>('strokeWidth').value, style: $<HTMLSelectElement>('strokeStyle').value });
-    const sh = makeShadow({ enabled: $<HTMLInputElement>('shadowEnabled').checked, color: $<HTMLInputElement>('shadowColor').value,
-        x: $<HTMLInputElement>('shadowX').value, y: $<HTMLInputElement>('shadowY').value, blur: $<HTMLInputElement>('shadowBlur').value });
+    const sh = makeShadow({ enabled: $<HTMLInputElement>('shadowEnabled').checked, type: $<HTMLSelectElement>('shadowType').value,
+        color: $<HTMLInputElement>('shadowColor').value, x: $<HTMLInputElement>('shadowX').value, y: $<HTMLInputElement>('shadowY').value,
+        blur: $<HTMLInputElement>('shadowBlur').value, opacity: Number($<HTMLInputElement>('shadowOpacity').value) / 100 });
     const blend = $<HTMLSelectElement>('blendMode').value as BlendMode;
     $('strokeWidthVal').textContent = String(st.width);
     $('shadowXVal').textContent = String(sh.x); $('shadowYVal').textContent = String(sh.y); $('shadowBlurVal').textContent = String(sh.blur);
+    $('shadowOpacityVal').textContent = Math.round(sh.opacity * 100) + '%';
+    syncShadowOffsetRows(sh.type);
     els.forEach(e => {
         e.stroke = Object.assign({}, st); e.shadow = Object.assign({}, sh); e.blendMode = blend;
         syncElement(e.id);
     });
     scheduleCommit();
+}
+
+function syncShadowPolar(x: number, y: number): void {
+    const dist = Math.min(140, Math.round(Math.hypot(x, y)));
+    let ang = Math.round(Math.atan2(y, x) * 180 / Math.PI);
+    if (ang < 0) ang += 360;
+    $<HTMLInputElement>('shadowAngle').value = String(ang); $('shadowAngleVal').textContent = ang + '°';
+    $<HTMLInputElement>('shadowDistance').value = String(dist); $('shadowDistanceVal').textContent = String(dist);
+}
+function syncShadowOffsetRows(type: ShadowType): void {
+    $('shadowOffsetRows').style.display = type === 'glow' ? 'none' : '';
+}
+/** 角度/距离（极坐标）→ X/Y，再走统一样式应用 */
+export function applyShadowPolar(): void {
+    const ang = Number($<HTMLInputElement>('shadowAngle').value) * Math.PI / 180;
+    const dist = Number($<HTMLInputElement>('shadowDistance').value);
+    const x = clamp(Math.round(dist * Math.cos(ang)), -100, 100), y = clamp(Math.round(dist * Math.sin(ang)), -100, 100);
+    $<HTMLInputElement>('shadowX').value = String(x); $('shadowXVal').textContent = String(x);
+    $<HTMLInputElement>('shadowY').value = String(y); $('shadowYVal').textContent = String(y);
+    $('shadowAngleVal').textContent = $<HTMLInputElement>('shadowAngle').value + '°';
+    $('shadowDistanceVal').textContent = $<HTMLInputElement>('shadowDistance').value;
+    applyStyleChange();
+}
+/** 直接拖 X/Y 后同步角度/距离显示 */
+export function applyShadowXY(): void {
+    applyStyleChange();
+    syncShadowPolar(Number($<HTMLInputElement>('shadowX').value), Number($<HTMLInputElement>('shadowY').value));
+}
+/** 一键投影预设：应用到选中物件并刷新面板 */
+export function applyShadowPreset(key: string): void {
+    const preset = SHADOW_PRESETS[key];
+    if (!preset) return;
+    const els = selectedEls().filter(e => !e.locked);
+    if (!els.length) { toast('请先选中要应用投影的物件', 'error'); return; }
+    const sh = makeShadow({ ...preset, enabled: true });
+    els.forEach(e => { e.shadow = Object.assign({}, sh); syncElement(e.id); });
+    scheduleCommit();
+    syncStyleControls();
+    toast('已应用投影预设', 'success');
 }
 
 export function applyFillAlpha(): void {

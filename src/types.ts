@@ -4,6 +4,7 @@ export type ElementType = 'rect' | 'circle' | 'triangle' | 'star' | 'arrow' | 'l
 export type FillMode = 'solid' | 'linear' | 'radial' | 'conic';
 export type LineStyle = 'solid' | 'dashed' | 'dotted' | 'wavy';
 export type StrokeStyle = 'solid' | 'dashed' | 'dotted';
+export type ShadowType = 'drop' | 'glow';
 export type TextAlign = 'left' | 'center' | 'right' | 'justify';
 export type TextSizeMode = 'fixed' | 'autoH' | 'autoWH';
 export type BlendMode = 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten' | 'difference';
@@ -30,7 +31,7 @@ export interface Fill {
     alpha: number;
 }
 export interface Stroke { color: string; width: number; style: StrokeStyle; }
-export interface Shadow { enabled: boolean; color: string; x: number; y: number; blur: number; }
+export interface Shadow { enabled: boolean; type: ShadowType; color: string; x: number; y: number; blur: number; opacity: number; }
 export interface TextRun { text: string; bold: boolean; italic: boolean; underline: boolean; color: string; }
 export interface TextStyle {
     runs: TextRun[];

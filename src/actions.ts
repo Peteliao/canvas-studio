@@ -24,7 +24,7 @@ import { groupSelected, ungroupSelected, collapseAllGroups, renameSelected, rend
 import { copyToClipboardSystem, pasteFromClipboardSystem } from './clipboard';
 import { newProject, createVersion } from './projects';
 import { runSelfTest } from './selftest';
-import { eyedropper, addSwatch, applyHexInput, useColor, applyStyleChange, applyFillAlpha } from './swatches';
+import { eyedropper, addSwatch, applyHexInput, useColor, applyStyleChange, applyFillAlpha, applyShadowPolar, applyShadowXY, applyShadowPreset } from './swatches';
 import { setLineStyle, setWavyDash, curveOp, clientToWorld } from './interaction';
 import { updateElementColor, updateCanvasBg, toggleElBgMode, updateElementBackground, updateElementOpacity, updateElementRadius, updateLineStyle, toggleBgMode } from './styles';
 import { updateCurveFill, updateCurveStroke } from './panel';
@@ -55,6 +55,7 @@ export const ACTIONS: Record<string, ActionFn> = {
     deleteSelected: () => deleteSelected(),
     textStyle: arg => updateTextStyle(arg!),
     textAlign: arg => updateTextAlign(arg as TextAlign),
+    shadowPreset: arg => applyShadowPreset(arg || ''),
     layer: arg => layerAction(arg!),
     relLayer: arg => startRelLayer(arg as 'under' | 'above'),
     exportConfig: () => { void exportConfig(); },
@@ -191,10 +192,14 @@ export function bindDelegates(): void {
         strokeStyle: () => applyStyleChange(),
         blendMode: () => applyStyleChange(),
         shadowEnabled: () => applyStyleChange(),
+        shadowType: () => applyStyleChange(),
         shadowColor: () => applyStyleChange(),
-        shadowX: () => applyStyleChange(),
-        shadowY: () => applyStyleChange(),
+        shadowX: () => applyShadowXY(),
+        shadowY: () => applyShadowXY(),
+        shadowAngle: () => applyShadowPolar(),
+        shadowDistance: () => applyShadowPolar(),
         shadowBlur: () => applyStyleChange(),
+        shadowOpacity: () => applyStyleChange(),
         elAlphaInput: () => applyFillAlpha(),
         curveFillEnabled: () => updateCurveFill(),
         curveFillMode: () => updateCurveFill(),

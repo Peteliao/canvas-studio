@@ -525,6 +525,8 @@ select:focus { border-color: var(--primary); }
 .mini-btn { padding: 4px 7px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-surface); font-size: 10px; color: var(--text-2); white-space: nowrap; }
 .mini-btn:hover { color: var(--primary); border-color: var(--primary-ring); }
 .mini-btn.danger { color: var(--danger); }
+.shadow-presets { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.shadow-presets .mini-btn { flex: 1 1 auto; text-align: center; cursor: pointer; }
 .list-empty { padding: 16px 8px; text-align: center; font-size: 11px; color: var(--text-3); }
 
 /* ==================== 模态框 ==================== */

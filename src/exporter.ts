@@ -203,10 +203,11 @@ export async function drawExportElement(ctx: CanvasRenderingContext2D, el: Canva
     }
     // N5：投影
     if (el.shadow && el.shadow.enabled) {
-        ctx.shadowColor = hexToRgba(el.shadow.color, .72);
-        ctx.shadowBlur = el.shadow.blur * (ctx.__exportScale || 1);
-        ctx.shadowOffsetX = el.shadow.x * (ctx.__exportScale || 1);
-        ctx.shadowOffsetY = el.shadow.y * (ctx.__exportScale || 1);
+        const sc = ctx.__exportScale || 1;
+        ctx.shadowColor = hexToRgba(el.shadow.color, el.shadow.opacity);
+        ctx.shadowBlur = el.shadow.blur * sc;
+        ctx.shadowOffsetX = (el.shadow.type === 'glow' ? 0 : el.shadow.x) * sc;
+        ctx.shadowOffsetY = (el.shadow.type === 'glow' ? 0 : el.shadow.y) * sc;
     }
     ctx.translate((el.x - (originX || 0)) + el.pivotX * el.w, (el.y - (originY || 0)) + el.pivotY * h);
     ctx.rotate(el.rotation * Math.PI / 180);
