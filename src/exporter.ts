@@ -19,6 +19,7 @@ export interface ExportOpts {
 }
 
 export function paintFill(ctx: CanvasRenderingContext2D, fill: Fill, w: number, h: number): void {
+    if (!fill.enabled) { ctx.fillStyle = 'rgba(0,0,0,0)'; return; }
     if (fill.mode === 'solid') { ctx.fillStyle = fill.color; return; }
     const s = fill.start, e = fill.end;
     if (fill.mode === 'linear') {
@@ -97,7 +98,7 @@ function drawTextRuns(ctx: CanvasRenderingContext2D, el: CanvasElement): void {
         tokens.forEach(tok => {
             const r = tok.run;
             ctx.font = fontForRun(r, t);
-            ctx.fillStyle = r.color || el.fill.color;
+            ctx.fillStyle = r.color || (el.fill.enabled ? el.fill.color : 'rgba(0,0,0,0)');
             // 逐字符绘制以支持字间距
             let cx = x;
             for (const ch of tok.text) {

@@ -19,6 +19,7 @@ export interface Box { left: number; top: number; right: number; bottom: number;
 export interface AABB extends Box { cx: number; cy: number; }
 
 export interface Fill {
+    enabled: boolean;
     mode: FillMode;
     color: string;
     start: string;

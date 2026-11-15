@@ -14,6 +14,7 @@ function xmlEscape(s: string): string {
 }
 
 export function fillDefs(id: string, f: Fill): { def: string; ref: string } {
+    if (!f.enabled) return { def: '', ref: 'none' };
     if (f.mode === 'solid') return { def: '', ref: hexToRgba(f.color, finite(f.alpha, 1)) };
     const a = finite(f.alpha, 1), s = hexToRgba(f.start, a), e = hexToRgba(f.end, a);
     if (f.mode === 'linear') {
@@ -83,7 +84,7 @@ export function buildSVG(opts: SVGExportOpts): string {
                     x += tok.w + extra;
                 });
             });
-            inner = `<text font-family="${xmlEscape(t.fontFamily)}" font-size="${t.fontSize}" font-weight="${t.fontWeight}" letter-spacing="${t.letterSpacing}" fill="${hexToRgba(el.fill.color, finite(el.fill.alpha, 1))}" dominant-baseline="text-before-edge">${spans.join('')}</text>`;
+            inner = `<text font-family="${xmlEscape(t.fontFamily)}" font-size="${t.fontSize}" font-weight="${t.fontWeight}" letter-spacing="${t.letterSpacing}" fill="${el.fill.enabled ? hexToRgba(el.fill.color, finite(el.fill.alpha, 1)) : 'none'}" dominant-baseline="text-before-edge">${spans.join('')}</text>`;
         } else if (el.type === 'line') {
             const ln = el.line!, y = h / 2;
             if (ln.style === 'wavy') {

@@ -18,6 +18,7 @@ const asRecord = (raw: unknown): Record<string, unknown> => (raw && typeof raw =
 export function makeFill(raw: unknown): Fill {
     const o = asRecord(raw);
     return {
+        enabled: o.enabled !== false,
         mode: enumOf(FILL_MODES, o.mode, 'solid'),
         color: validColor(o.color, '#cccccc'),
         start: validColor(o.start, '#ffffff'),
@@ -116,7 +117,7 @@ export function makeCurve(raw: unknown): Curve {
 }
 /** 仅「闭合 + 已启用填充」才绘制填充；开放路径只描边，避免隐式闭合产生意外色块 */
 export function curveFillOn(el: CanvasElement | null): boolean {
-    return !!(el && el.type === 'curve' && el.curve && el.curve.closed && el.curve.filled);
+    return !!(el && el.type === 'curve' && el.curve && el.curve.closed && el.curve.filled && el.fill.enabled);
 }
 /** 曲线描边是否显示（旧存档无 strokeOn 字段时默认显示） */
 export function curveStrokeOn(el: CanvasElement | null): boolean {

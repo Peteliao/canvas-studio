@@ -16,7 +16,7 @@ import { startTextEdit, finishTextEdit } from './richtext';
 import { resetPivot } from './elements';
 import { endRelLayer, handleLayerPick } from './layers';
 import { openCropModal } from './cropper';
-import { bucketHitElement, bucketDetectTarget, applyBucketColor, bucketColor, setBucketColor, bucketSlotLabel, updateBucketHover } from './bucket';
+import { bucketHitElement, bucketDetectTarget, applyBucketColor, bucketColor, setBucketColor, bucketSlotLabel, updateBucketHover, elementSlotColor } from './bucket';
 import { useColor } from './swatches';
 import { setTool, refreshStudioUI } from './tools';
 import { setToggleButton } from './theme';
@@ -281,12 +281,12 @@ function onPointerDown(e: PointerEvent): void {
         const slot = bucketDetectTarget(hit, e.clientX, e.clientY, e);
         if (e.altKey) {
             if (hit) {
-                const c = slot === 'stroke'
-                    ? (hit.line ? hit.line.color : (hit.stroke ? hit.stroke.color : hit.fill.color))
-                    : hit.fill.color;
+                const c = elementSlotColor(hit, slot);
                 useColor(c);
                 setBucketColor(slot, c);
-                toast('已吸取' + bucketSlotLabel(slot) + '色 ' + c.toUpperCase(), 'success');
+                toast(c === 'none'
+                    ? '已吸取' + bucketSlotLabel(slot) + '状态：无' + bucketSlotLabel(slot)
+                    : '已吸取' + bucketSlotLabel(slot) + '色 ' + c.toUpperCase(), 'success');
             }
             e.preventDefault(); return;
         }

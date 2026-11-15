@@ -71,11 +71,13 @@ export function updateElementColor(): void {
     const els = selectedEls().filter(e => !e.locked);
     els.forEach(e => {
         if (e.type === 'text') {
+            e.fill.enabled = true;
             e.fill.color = v;
             e.text!.runs.forEach(r => { r.color = ''; });
         } else if (e.type === 'line' || e.type === 'curve') {
             e.line!.color = v;
         } else {
+            e.fill.enabled = true;
             e.fill.color = v;
         }
         syncElement(e.id);

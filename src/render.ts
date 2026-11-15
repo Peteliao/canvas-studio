@@ -87,7 +87,7 @@ export function renderRuns(container: HTMLElement, el: CanvasElement): void {
     container.style.lineHeight = String(t.lineHeight);
     container.style.letterSpacing = t.letterSpacing + 'px';
     container.style.textAlign = t.align;
-    container.style.color = el.fill.color;
+    container.style.color = el.fill.enabled ? el.fill.color : 'transparent';
     t.runs.forEach(run => {
         const span = document.createElement('span');
         span.textContent = run.text;

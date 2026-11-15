@@ -1,10 +1,11 @@
 import { HEX_RE } from './constants';
 import { state, nodeMap } from './state';
-import { $opt, finite } from './utils';
-import { getEl, makeStroke } from './model';
+import { $opt, finite, toast } from './utils';
+import { getEl, makeStroke, curveFillOn, curveStrokeOn, selectedEls } from './model';
 import { hexToRgba } from './style';
 import { syncElement } from './render';
 import { saveSettings } from './db';
+import { commit } from './history';
 import { clientToWorld, worldToLocalPoint } from './interaction';
 import type { BucketSlot, CanvasElement } from './types';
 
@@ -15,11 +16,18 @@ export const bucketSlotLabel = (s: BucketSlot): string => s === 'stroke' ? '描�
 export function bucketColor(slot: BucketSlot): string {
     const s = state.settings;
     const v = slot === 'stroke' ? s.bucketStrokeColor : s.bucketFillColor;
+    if (v === 'none') return 'none';
     return HEX_RE.test(v) ? v : (slot === 'stroke' ? BUCKET_STROKE_DEFAULT : BUCKET_FILL_DEFAULT);
 }
 
+/** 色槽显示文案：无填充/无描边，或大写 HEX */
+export function bucketColorLabel(slot: BucketSlot): string {
+    const c = bucketColor(slot);
+    return c === 'none' ? '无' + bucketSlotLabel(slot) : c.toUpperCase();
+}
+
 export function setBucketColor(slot: BucketSlot, color: string): void {
-    if (!HEX_RE.test(color)) return;
+    if (color !== 'none' && !HEX_RE.test(color)) return;
     if (slot === 'stroke') state.settings.bucketStrokeColor = color;
     else state.settings.bucketFillColor = color;
     state.bucketSlot = slot;
@@ -27,12 +35,21 @@ export function setBucketColor(slot: BucketSlot, color: string): void {
     syncBucketSwatch();
 }
 
-/** 为指定色槽打开隐藏的原生取色器 */
-export function openBucketPicker(slot?: BucketSlot): void {
+/** 非颜料桶工具且有选中物件时，色槽点击 / “无”直接编辑选中物件，而非设置涂色 */
+export function bucketEditsSelection(): boolean {
+    return state.tool !== 'bucket' && state.selection.length > 0;
+}
+
+let pickerEditsSelection = false;
+
+/** 为指定色槽打开隐藏的原生取色器；editsSelection 表示确认后应用到选中物件 */
+export function openBucketPicker(slot?: BucketSlot, editsSelection = false): void {
     const input = $opt<HTMLInputElement>('bucketColorInput');
     if (!input) return;
+    pickerEditsSelection = editsSelection;
     state.bucketSlot = slot || 'fill';
-    input.value = bucketColor(state.bucketSlot);
+    const cur = bucketColor(state.bucketSlot);
+    input.value = cur === 'none' ? (state.bucketSlot === 'stroke' ? BUCKET_STROKE_DEFAULT : BUCKET_FILL_DEFAULT) : cur;
     syncBucketSwatch();
     if (typeof input.showPicker === 'function') {
         try { input.showPicker(); return; } catch { /* 回退到 click */ }
@@ -40,23 +57,78 @@ export function openBucketPicker(slot?: BucketSlot): void {
     input.click();
 }
 
+/** 取色器确认：编辑选中物件 或 设置颜料桶涂色 */
+export function commitBucketPicker(color: string): void {
+    const slot = state.bucketSlot || 'fill';
+    const edit = pickerEditsSelection;
+    pickerEditsSelection = false;
+    if (edit && bucketEditsSelection()) {
+        if (applySlotToSelection(slot, color)) toast('已修改选中物件' + bucketSlotLabel(slot) + '色', 'success');
+    } else {
+        setBucketColor(slot, color);
+    }
+}
+
+/** 把填充/描边颜色（或 'none'）应用到选中物件并同步色槽，返回是否有改动 */
+export function applySlotToSelection(slot: BucketSlot, color: string): boolean {
+    let changed = false;
+    selectedEls().forEach(e => { if (applyBucketColor(e, slot, color)) changed = true; });
+    if (changed) commit();
+    setBucketColor(slot, color);
+    syncBucketFromSelection();
+    return changed;
+}
+
 export function syncBucketSwatch(): void {
     const fill = bucketColor('fill'), stroke = bucketColor('stroke');
     const fChip = $opt('bucketFillChip'), sChip = $opt('bucketStrokeChip');
-    if (fChip) fChip.style.background = fill;
-    if (sChip) sChip.style.background = stroke;
+    if (fChip) { fChip.style.background = fill === 'none' ? '' : fill; fChip.classList.toggle('none', fill === 'none'); }
+    if (sChip) { sChip.style.background = stroke === 'none' ? '' : stroke; sChip.classList.toggle('none', stroke === 'none'); }
     const fSlot = $opt('bucketFillSlot'), sSlot = $opt('bucketStrokeSlot');
+    const editHint = bucketEditsSelection() ? '：点击修改选中物件' : '：点此选色';
     if (fSlot) {
-        fSlot.title = '填充色 ' + fill.toUpperCase() + '：点此选色';
+        fSlot.title = '填充色 ' + bucketColorLabel('fill') + editHint;
         fSlot.classList.toggle('active', state.bucketSlot !== 'stroke');
     }
     if (sSlot) {
-        sSlot.title = '描边色 ' + stroke.toUpperCase() + '：点此选色';
+        sSlot.title = '描边色 ' + bucketColorLabel('stroke') + editHint;
         sSlot.classList.toggle('active', state.bucketSlot === 'stroke');
     }
+    const noneBtn = $opt('bucketNoneBtn');
+    if (noneBtn) {
+        const active = state.bucketSlot === 'stroke' ? 'stroke' : 'fill';
+        noneBtn.title = '无' + bucketSlotLabel(active)
+            + (bucketEditsSelection() ? '：去掉选中物件的' + bucketSlotLabel(active) : '：将当前色槽（' + bucketSlotLabel(active) + '）设为“无”');
+        noneBtn.classList.toggle('active', bucketColor(active) === 'none');
+    }
     const btn = $opt('railBucket');
-    if (btn) btn.title = '颜料桶 (B)：填充 ' + fill.toUpperCase() + ' · 描边 ' + stroke.toUpperCase()
+    if (btn) btn.title = '颜料桶 (B)：填充 ' + bucketColorLabel('fill') + ' · 描边 ' + bucketColorLabel('stroke')
         + '；点内部改填充、点边缘改描边，Shift 强制描边，Alt+点击吸色，拖动连续上色';
+}
+
+/** 读取元素在指定色槽上的当前状态；无填充/无描边返回 'none'（渐变取起始色） */
+export function elementSlotColor(el: CanvasElement, slot: BucketSlot): string {
+    if (slot === 'stroke') {
+        if (el.type === 'line') return el.line!.color;
+        if (el.type === 'curve') return curveStrokeOn(el) ? el.line!.color : 'none';
+        if (el.type === 'text') return 'none';
+        return el.stroke && el.stroke.width > 0 ? el.stroke.color : 'none';
+    }
+    if (el.type === 'line' || el.image) return 'none';
+    if (el.type === 'curve') return curveFillOn(el) ? (el.fill.mode === 'solid' ? el.fill.color : el.fill.start) : 'none';
+    if (!el.fill.enabled) return 'none';
+    return el.fill.mode === 'solid' ? el.fill.color : el.fill.start;
+}
+
+/** 选中单个物件时，双色槽自动获取其填充色与描边状态 */
+export function syncBucketFromSelection(): void {
+    if (state.selection.length !== 1) return;
+    const el = getEl(state.selection[0]);
+    if (!el) return;
+    state.settings.bucketFillColor = elementSlotColor(el, 'fill');
+    state.settings.bucketStrokeColor = elementSlotColor(el, 'stroke');
+    saveSettings();
+    syncBucketSwatch();
 }
 
 export function bucketHitElement(x: number, y: number, target?: EventTarget | null): CanvasElement | null {
@@ -108,26 +180,45 @@ export function bucketDetectTarget(el: CanvasElement | null, x: number, y: numbe
     return 'fill';
 }
 
-/** 按识别结果写入对应颜色：stroke 改描边，fill 改填充 */
+/** 按识别结果写入对应颜色：stroke 改描边，fill 改填充；'none' 表示无填充/无描边 */
 export function applyBucketColor(el: CanvasElement | null, target: BucketSlot, color: string): boolean {
-    if (!el || el.locked || el.visible === false || !HEX_RE.test(color)) return false;
+    if (!el || el.locked || el.visible === false) return false;
+    const none = color === 'none';
+    if (!none && !HEX_RE.test(color)) return false;
     const stroke = target === 'stroke';
     if (stroke && (el.type === 'line' || el.type === 'curve')) {
-        el.line!.color = color;
-        if (el.type === 'curve') el.curve!.strokeOn = true;
+        if (none) {
+            if (el.type === 'line') return false;   // 线条本身就是描边，不支持“无”
+            el.curve!.strokeOn = false;
+        } else {
+            el.line!.color = color;
+            if (el.type === 'curve') el.curve!.strokeOn = true;
+        }
     } else if (stroke && el.type === 'text') {
+        if (none) return false;   // 文本没有描边概念
+        el.fill.enabled = true;
         el.fill.color = color;
         el.text!.runs.forEach(r => { r.color = ''; });
     } else if (stroke) {
-        el.stroke = makeStroke(Object.assign({}, el.stroke, {
+        el.stroke = makeStroke(Object.assign({}, el.stroke, none ? { width: 0 } : {
             color, width: Math.max(1, finite(el.stroke && el.stroke.width, 0))
         }));
     } else if (el.type === 'line' || (el.type === 'curve' && !(el.curve && el.curve.closed))) {
+        if (none) return false;   // 开放路径只有描边
         el.line!.color = color;
     } else if (el.type === 'text') {
-        el.fill.color = color;
-        el.text!.runs.forEach(r => { r.color = ''; });
+        if (none) el.fill.enabled = false;
+        else {
+            el.fill.enabled = true;
+            el.fill.color = color;
+            el.text!.runs.forEach(r => { r.color = ''; });
+        }
+    } else if (none) {
+        if (el.image) return false;   // 图片没有可去掉的底色
+        if (el.type === 'curve') el.curve!.filled = false;
+        else el.fill.enabled = false;
     } else {
+        el.fill.enabled = true;
         el.fill.mode = 'solid';
         el.fill.color = color;
         if (el.type === 'curve') el.curve!.filled = true;
@@ -163,12 +254,13 @@ export function updateBucketHover(e: MouseEvent): void {
     if (!d) { hideBucketHover(); return; }
     bucketHoverEl = el.id;
     d.dataset.bucketTarget = target;
-    d.style.setProperty('--bucket-hi', color);
-    if (target === 'stroke') d.style.removeProperty('--bucket-hi-fade');
+    const none = color === 'none';
+    d.style.setProperty('--bucket-hi', none ? 'transparent' : color);
+    if (target === 'stroke' || none) d.style.removeProperty('--bucket-hi-fade');
     else d.style.setProperty('--bucket-hi-fade', hexToRgba(color, .22));
     const chip = $opt('bucketHoverChip'), text = $opt('bucketHoverText');
-    if (chip) chip.style.background = color;
-    if (text) text.textContent = bucketSlotLabel(target) + ' · ' + color.toUpperCase();
+    if (chip) { chip.style.background = none ? '' : color; chip.classList.toggle('none', none); }
+    if (text) text.textContent = bucketSlotLabel(target) + ' · ' + (none ? '无' + bucketSlotLabel(target) : color.toUpperCase());
     tip.style.left = (e.clientX + 16) + 'px';
     tip.style.top = (e.clientY + 16) + 'px';
     tip.classList.add('on');

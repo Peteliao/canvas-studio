@@ -8,12 +8,14 @@ import { commit } from './history';
 import { finishTextEdit } from './richtext';
 import { endRelLayer } from './layers';
 import { expandGroupIds } from './layerlist';
+import { syncBucketFromSelection } from './bucket';
 
 export function setSelection(ids: string[]): void {
     const valid = ids.filter(id => !!getEl(id));
     state.selection = expandGroupIds(valid);
     applySelectionClasses();
     updateUI();
+    syncBucketFromSelection();
 }
 export function deselectAll(): void {
     if (state.isTextEditing) finishTextEdit();
@@ -35,6 +37,7 @@ export function toggleSelection(id: string, additive: boolean): void {
     }
     applySelectionClasses();
     updateUI();
+    syncBucketFromSelection();
 }
 export function updateGeoLockButton(): void {
     const btn = $('btnGeoLock');

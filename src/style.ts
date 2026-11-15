@@ -10,6 +10,7 @@ export function hexToRgba(hex: string, alpha: number): string {
     return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 export function fillToCSS(f: Fill): string {
+    if (!f.enabled) return 'transparent';
     const a = clamp(finite(f.alpha, 1), 0, 1);
     const s = hexToRgba(f.start, a), e = hexToRgba(f.end, a);
     if (f.mode === 'linear') return `linear-gradient(${f.angle}deg, ${s}, ${e})`;

@@ -10,7 +10,7 @@ import { buildSVG, buildPDF } from './vector-export';
 import { getAABB, setPivot } from './geometry';
 import { textMeasureCtx, canvasTextWidth, applyAutoSize } from './render';
 import { layoutText, exportBoundsFor } from './exporter';
-import { bucketColor } from './bucket';
+import { bucketColor, elementSlotColor, applyBucketColor } from './bucket';
 import { neighborGapsFor, alignmentMeasures, drawMeasure } from './measure';
 import type { GapMeasure, AlignMeasure } from './measure';
 import { boxGuideMeasure } from './guides';
@@ -95,8 +95,28 @@ export function runSelfTest(): void {
         assert(!curveStrokeOn(el), '描边开关未生效');
         const svg = buildSVG({ bounds: { x: 0, y: 0, w: el.w, h: el.h }, elements: [el], transparent: true });
         assert(svg.includes('stroke-width="0"'), 'SVG 导出未遵循描边开关');
-        assert(HEX_RE.test(bucketColor('fill')) && HEX_RE.test(bucketColor('stroke')), '双色槽取值异常');
+        const okSlot = (c: string): boolean => c === 'none' || HEX_RE.test(c);
+        assert(okSlot(bucketColor('fill')) && okSlot(bucketColor('stroke')), '双色槽取值异常');
         return '填充 / 描边双色 · 描边开关 · 导出一致';
+    });
+    check('无填充 / 无描边', () => {
+        const el = buildElement('rect', 0, 0);
+        assert(elementSlotColor(el, 'fill') !== 'none', '默认填充应被获取');
+        assert(elementSlotColor(el, 'stroke') === 'none', '默认无描边应被获取');
+        assert(applyBucketColor(el, 'fill', 'none'), '无填充写入失败');
+        assert(!el.fill.enabled && elementSlotColor(el, 'fill') === 'none', '无填充状态未生效');
+        assert(fillToCSS(el.fill) === 'transparent', '无填充 CSS 应为透明');
+        const svg = buildSVG({ bounds: { x: 0, y: 0, w: el.w, h: el.h }, elements: [el], transparent: true });
+        assert(svg.includes('fill="none"'), 'SVG 导出缺少无填充');
+        assert(applyBucketColor(el, 'fill', '#123456') && el.fill.enabled, '重新上色应恢复填充');
+        assert(applyBucketColor(el, 'stroke', 'none') && el.stroke!.width === 0, '无描边应宽度归零');
+        const cv = buildElement('curve', 0, 0);
+        cv.curve!.closed = true; cv.curve!.filled = true;
+        assert(applyBucketColor(cv, 'fill', 'none') && !curveFillOn(cv), '曲线无填充未生效');
+        assert(applyBucketColor(cv, 'stroke', 'none') && !curveStrokeOn(cv), '曲线无描边未生效');
+        const ln = buildElement('line', 0, 0);
+        assert(!applyBucketColor(ln, 'stroke', 'none'), '线条不应支持无描边');
+        return '取色 · 无填充/无描边 · 重新上色恢复';
     });
     check('旋转中心（枢轴）', () => {
         const el = buildElement('rect', 100, 100);

@@ -139,7 +139,7 @@ export function loadSettings(): Settings {
             if (Array.isArray(o.palette)) s.palette = (o.palette as unknown[]).filter((c): c is string => typeof c === 'string' && HEX_RE.test(c)).slice(0, 32);
         }
     } catch { /* 使用默认设置 */ }
-    if (!HEX_RE.test(s.bucketFillColor)) s.bucketFillColor = '#4f6bff';
-    if (!HEX_RE.test(s.bucketStrokeColor)) s.bucketStrokeColor = '#1c2230';
+    if (s.bucketFillColor !== 'none' && !HEX_RE.test(s.bucketFillColor)) s.bucketFillColor = '#4f6bff';
+    if (s.bucketStrokeColor !== 'none' && !HEX_RE.test(s.bucketStrokeColor)) s.bucketStrokeColor = '#1c2230';
     return s;
 }

@@ -107,7 +107,7 @@ export function applySwatch(color: string): void {
     }
     els.forEach(e => {
         if (e.type === 'line' || e.type === 'curve') e.line!.color = color;
-        else { e.fill.color = color; if (e.type === 'text') e.text!.runs.forEach(r => { r.color = ''; }); }
+        else { e.fill.enabled = true; e.fill.color = color; if (e.type === 'text') e.text!.runs.forEach(r => { r.color = ''; }); }
         syncElement(e.id);
     });
     $<HTMLInputElement>('elColorInput').value = color; $<HTMLInputElement>('elColorHex').value = color.toUpperCase();

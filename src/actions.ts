@@ -28,7 +28,7 @@ import { eyedropper, addSwatch, applyHexInput, useColor, applyStyleChange, apply
 import { setLineStyle, setWavyDash, curveOp, clientToWorld } from './interaction';
 import { updateElementColor, updateCanvasBg, toggleElBgMode, updateElementBackground, updateElementOpacity, updateElementRadius, updateLineStyle, toggleBgMode } from './styles';
 import { updateCurveFill, updateCurveStroke } from './panel';
-import { openBucketPicker, setBucketColor, hideBucketHover } from './bucket';
+import { openBucketPicker, setBucketColor, hideBucketHover, bucketSlotLabel, bucketEditsSelection, commitBucketPicker, applySlotToSelection } from './bucket';
 import { addImage, handleImageUpload } from './image';
 import { saveSettings } from './db';
 import { syncTransform } from './render';
@@ -234,10 +234,18 @@ export function bindDelegates(): void {
 
     ([['bucketFillSlot', 'fill'], ['bucketStrokeSlot', 'stroke']] as [string, BucketSlot][]).forEach(([id, slot]) => {
         const n = $opt(id);
-        if (n) n.addEventListener('click', e => { e.stopPropagation(); openBucketPicker(slot); });
+        if (n) n.addEventListener('click', e => { e.stopPropagation(); openBucketPicker(slot, bucketEditsSelection()); });
     });
     const bucketColorInput = $opt<HTMLInputElement>('bucketColorInput');
-    if (bucketColorInput) bucketColorInput.addEventListener('change', () => setBucketColor(state.bucketSlot || 'fill', bucketColorInput.value));
+    if (bucketColorInput) bucketColorInput.addEventListener('change', () => commitBucketPicker(bucketColorInput.value));
+    const bucketNoneBtn = $opt('bucketNoneBtn');
+    if (bucketNoneBtn) bucketNoneBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        const slot = state.bucketSlot || 'fill';
+        if (bucketEditsSelection()) applySlotToSelection(slot, 'none');
+        else setBucketColor(slot, 'none');
+        toast('已设为无' + bucketSlotLabel(slot), 'success');
+    });
     document.addEventListener('mouseleave', () => { if (state.tool === 'bucket') hideBucketHover(); });
 
     $('imageInput').addEventListener('change', e => { void handleImageUpload(e.target as HTMLInputElement); });

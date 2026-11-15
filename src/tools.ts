@@ -4,7 +4,7 @@ import { $, $opt, toast } from './utils';
 import { getEl, selectedEls } from './model';
 import { saveSettings } from './db';
 import { finishPen, renderPenDraft } from './interaction';
-import { bucketColor, hideBucketHover, syncBucketSwatch } from './bucket';
+import { bucketColorLabel, hideBucketHover, syncBucketSwatch } from './bucket';
 import { updateGrid, drawRulers } from './grid';
 import { drawGuides } from './guides';
 import { drawMeasure } from './measure';
@@ -30,7 +30,7 @@ export function setTool(name: ToolName): void {
     if (name === 'pen') {
         toast('钢笔：单击加角点，拖拽出曲线；Alt+点击锚点或 Alt+落新点可让下一段变直线；Enter 完成', 'success');
     } else if (name === 'bucket') {
-        toast('颜料桶：填充 ' + bucketColor('fill').toUpperCase() + ' · 描边 ' + bucketColor('stroke').toUpperCase()
+        toast('颜料桶：填充 ' + bucketColorLabel('fill') + ' · 描边 ' + bucketColorLabel('stroke')
             + '；点内部改填充、点边缘改描边，Shift 强制描边，Alt+点击吸色', 'success');
     }
 }
