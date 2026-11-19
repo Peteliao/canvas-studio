@@ -190,17 +190,56 @@ export function splitCubic(pts: [Point, Point, Point, Point], t: number): { left
 /** 节点是否带控制柄（用于判断直线/曲线连接） */
 export function curveNodeHasIn(n: CurveNode): boolean { return Math.abs(n.ix - n.x) > 1e-6 || Math.abs(n.iy - n.y) > 1e-6; }
 export function curveNodeHasOut(n: CurveNode): boolean { return Math.abs(n.ox - n.x) > 1e-6 || Math.abs(n.oy - n.y) > 1e-6; }
-/** 路径在元素局部坐标中的范围，含控制柄，用于“适配边框” */
-export function curveLocalBox(el: CanvasElement): Box {
-    const c = el.curve!, w = el.w, h = el.h;
+function cubicValue(p0: number, p1: number, p2: number, p3: number, t: number): number {
+    const u = 1 - t;
+    return u * u * u * p0 + 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t * p3;
+}
+function cubicExtrema(p0: number, p1: number, p2: number, p3: number): number[] {
+    const a = -p0 + 3 * p1 - 3 * p2 + p3;
+    const b = 2 * (p0 - 2 * p1 + p2);
+    const c = p1 - p0;
+    const out: number[] = [];
+    if (Math.abs(a) < 1e-9) {
+        if (Math.abs(b) > 1e-9) {
+            const t = -c / b;
+            if (t > 0 && t < 1) out.push(t);
+        }
+        return out;
+    }
+    const disc = b * b - 4 * a * c;
+    if (disc < 0) return out;
+    const root = Math.sqrt(disc);
+    [-b - root, -b + root].forEach(v => {
+        const t = v / (2 * a);
+        if (t > 0 && t < 1) out.push(t);
+    });
+    return out;
+}
+/** 路径在指定单位下的实际视觉范围（贝塞尔极值），不含外伸控制柄 */
+export function curveNodesBox(nodes: CurveNode[], w: number, h: number, closed: boolean): Box {
+    if (!nodes.length) return { left: 0, top: 0, right: 0, bottom: 0, w: 1, h: 1 };
     let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
     const put = (x: number, y: number): void => { l = Math.min(l, x); t = Math.min(t, y); r = Math.max(r, x); b = Math.max(b, y); };
-    c.nodes.forEach(n => {
+    const segs = closed ? nodes.length : nodes.length - 1;
+    if (!segs) {
+        const n = nodes[0];
         put(n.x * w, n.y * h);
-        put(n.ix * w, n.iy * h);
-        put(n.ox * w, n.oy * h);
-    });
+    }
+    for (let i = 0; i < segs; i++) {
+        const A = nodes[i], B = nodes[(i + 1) % nodes.length];
+        const x0 = A.x * w, y0 = A.y * h;
+        const x1 = A.ox * w, y1 = A.oy * h;
+        const x2 = B.ix * w, y2 = B.iy * h;
+        const x3 = B.x * w, y3 = B.y * h;
+        put(x0, y0); put(x3, y3);
+        const ts = new Set([...cubicExtrema(x0, x1, x2, x3), ...cubicExtrema(y0, y1, y2, y3)]);
+        ts.forEach(tv => put(cubicValue(x0, x1, x2, x3, tv), cubicValue(y0, y1, y2, y3, tv)));
+    }
     return { left: l, top: t, right: r, bottom: b, w: Math.max(1, r - l), h: Math.max(1, b - t) };
+}
+export function curveLocalBox(el: CanvasElement): Box {
+    const c = el.curve!;
+    return curveNodesBox(c.nodes, el.w, el.h, c.closed);
 }
 export function lineDashArray(ln: LineSpec): string {
     if (ln.style === 'dashed') return `${ln.width * 3} ${ln.width * 2}`;

@@ -1,10 +1,12 @@
 /* 内置自检 */
 import { VERSION, DB_NAME, HEX_RE, SHADOW_PRESETS, POLYGON_POINTS, CLIP_PATHS, VECTOR_SHAPE_PRESETS, TYPES } from './constants';
-import type { CanvasElement, AABB, ElementType } from './types';
+import type { CanvasElement, AABB, ElementType, CurveNode, SnapPoint } from './types';
 import { state } from './state';
 import { $, iconEl } from './utils';
 import { validateProject, snapshotJSON, makeFill, makeLine, makeStroke, makeShadow, makeText, buildElement, validateElement,
-    curvePathD, curveFillOn, curveStrokeOn, validateGuide, curveSegPts, splitCubic, cubicAt, sortedElements } from './model';
+    curvePathD, curveFillOn, curveStrokeOn, validateGuide, curveSegPts, splitCubic, cubicAt, sortedElements,
+    curveNodesBox, curveLocalBox } from './model';
+import { elementSnapPoints, nearestSnapPoint, nearestPointSnap } from './snappoints';
 import { applyEffectTint, fillToCSS, shapeFilter, lineHeightFor, wavyDashSpec, wavyDataURI, strokeOverlayMarkup } from './style';
 import { buildSVG, buildPDF } from './vector-export';
 import { SHAPE_PARAM_SPECS, shapePoints, shapeClipPath, sanitizeShapeParams } from './shapes';
@@ -100,6 +102,50 @@ export function runSelfTest(): void {
         const expect = cubicAt(pts[0], pts[1], pts[2], pts[3], 0.5);
         assert(Math.abs(sp.mid.x - expect.x) < 0.001 && Math.abs(sp.mid.y - expect.y) < 0.001, '节点分割点偏离曲线');
         return el.curve!.nodes.length + ' 节点 · 兼容旧版·可闭合';
+    });
+    check('曲线真实边界（贝塞尔极值）', () => {
+        const nodes: CurveNode[] = [
+            { x: 0, y: 0, ix: 0, iy: 0, ox: 0, oy: 0.5, t: 'cusp' },
+            { x: 1, y: 0, ix: 1, iy: 0.5, ox: 1, oy: 0, t: 'cusp' }
+        ];
+        const b = curveNodesBox(nodes, 100, 200, false);
+        assert(Math.abs(b.left) < 0.001 && Math.abs(b.top) < 0.001, '边界起点错误');
+        assert(Math.abs(b.right - 100) < 0.001, '边界右端错误');
+        assert(Math.abs(b.bottom - 75) < 0.01, '未按曲线极值计算下边界：' + b.bottom);
+        assert(Math.abs(b.h - 75) < 0.01 && b.h < 100, '高度不应包含外伸控制柄');
+        const el = buildElement('curve', 20, 30);
+        el.w = 100; el.h = 200;
+        el.curve = { nodes, closed: false, filled: false, strokeOn: true };
+        const lb = curveLocalBox(el);
+        assert(Math.abs(lb.w - 100) < 0.01 && Math.abs(lb.h - 75) < 0.01, '元素局部边界与路径不一致');
+        const aabb = getAABB(el);
+        assert(aabb.left === 20 && aabb.top === 30 && Math.abs(aabb.w - 100) < 0.01, '元素框与视觉路径未重合');
+        return '极值 75 / 控制柄外伸 100 · 对齐无间隙';
+    });
+    check('捕捉点生成与吸附', () => {
+        const circle = buildElement('circle', 100, 100);
+        circle.w = 100; circle.h = 100;
+        const cps = elementSnapPoints(circle);
+        assert(cps.length === 5, '圆形应有圆心 + 4 象限点，实际 ' + cps.length);
+        assert(cps.some(p => p.kind === 'center' && p.x === 150 && p.y === 150), '缺圆心');
+        assert(cps.filter(p => p.kind === 'quadrant').length === 4, '象限点数量异常');
+        const near = nearestSnapPoint({ x: 101, y: 151 }, 8, new Set(), cps);
+        assert(near && near.kind === 'quadrant' && near.x === 100 && near.y === 150, '象限点未命中');
+        assert(!nearestSnapPoint({ x: 180, y: 180 }, 8, new Set(), cps), '超出阈值不应吸附');
+        const rect = buildElement('rect', 0, 0);
+        const rps = elementSnapPoints(rect);
+        assert(rps.some(p => p.kind === 'endpoint') && rps.some(p => p.kind === 'midpoint'), '矩形缺少端点 / 中点');
+        assert(rps.filter(p => p.kind === 'golden').length === 12, '黄金分割点数量异常');
+        const rot = buildElement('rect', 0, 0);
+        rot.w = 100; rot.h = 100; rot.rotation = 90;
+        const rp = elementSnapPoints(rot);
+        assert(rp.some(p => Math.abs(p.x - 100) < 0.01 && Math.abs(p.y) < 0.01), '旋转后捕捉点未跟随');
+        const target: SnapPoint = { x: 100, y: 100, kind: 'center', label: '中心' };
+        const source: SnapPoint = { x: 0, y: 0, kind: 'endpoint', label: '端点' };
+        const snap = nearestPointSnap([source], [target], 96, 104, 8);
+        assert(snap && snap.dx === 4 && snap.dy === -4 && snap.target === target, '移动吸附偏移错误');
+        assert(!nearestPointSnap([source], [target], 80, 80, 8), '超出阈值仍吸附');
+        return '圆心 / 象限 / 端点 / 中点 / 黄金分割 · 旋转跟随';
     });
     check('闭合曲线填充', () => {
         const el = buildElement('curve', 0, 0);

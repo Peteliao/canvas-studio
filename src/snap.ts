@@ -3,9 +3,21 @@ import { $, $opt } from './utils';
 import { getEl } from './model';
 import { getAABB, selectionAABB } from './geometry';
 import { guideAxis } from './guides';
-import type { Interaction, SnapLine } from './types';
+import { collectSnapPoints, nearestPointSnap, selectionSnapPoints, SNAP_POINT_PX } from './snappoints';
+import type { Interaction, SnapLine, SnapPoint } from './types';
 
 type DragInteraction = Extract<Interaction, { kind: 'drag' }>;
+const dragSnapCache = new WeakMap<DragInteraction, { sources: SnapPoint[]; targets: SnapPoint[] }>();
+
+function snapDataFor(it: DragInteraction): { sources: SnapPoint[]; targets: SnapPoint[] } {
+    let data = dragSnapCache.get(it);
+    if (!data) {
+        const ids = new Set(it.items.map(o => o.id));
+        data = { sources: selectionSnapPoints(it.items), targets: collectSnapPoints(ids) };
+        dragSnapCache.set(it, data);
+    }
+    return data;
+}
 
 export function snapCandidates(ignoreIds: Set<string>): { xs: number[]; ys: number[] } {
     const xs = [0, state.model.canvas.w / 2, state.model.canvas.w];
@@ -24,12 +36,17 @@ export function snapCandidates(ignoreIds: Set<string>): { xs: number[]; ys: numb
     return { xs, ys };
 }
 
-export function applyDragSnap(it: DragInteraction, mx: number, my: number): { mx: number; my: number; guides: SnapLine[] } {
-    if (!state.settings.snap) return { mx, my, guides: [] };
+export function applyDragSnap(it: DragInteraction, mx: number, my: number): { mx: number; my: number; guides: SnapLine[]; point: SnapPoint | null } {
+    if (!state.settings.snap) return { mx, my, guides: [], point: null };
     const ids = new Set(it.items.map(o => o.id));
+    const { sources, targets } = snapDataFor(it);
+    const pointSnap = nearestPointSnap(sources, targets, mx, my, SNAP_POINT_PX / state.zoom);
+    if (pointSnap) {
+        return { mx: mx + pointSnap.dx, my: my + pointSnap.dy, guides: [], point: pointSnap.target };
+    }
     const { xs, ys } = snapCandidates(ids);
     const start = it.startBox || (it.startBox = selectionAABB());
-    if (!start) return { mx, my, guides: [] };
+    if (!start) return { mx, my, guides: [], point: null };
     const cur = { left: start.left + mx, right: start.right + mx, cx: start.cx + mx,
                   top: start.top + my, bottom: start.bottom + my, cy: start.cy + my };
     const threshold = 6 / state.zoom;
@@ -60,20 +77,31 @@ export function applyDragSnap(it: DragInteraction, mx: number, my: number): { mx
             }
         }
     }
-    return { mx, my, guides };
+    return { mx, my, guides, point: null };
 }
 
-export function drawSnapGuides(guides: SnapLine[] | null): void {
+export function drawSnapGuides(guides: SnapLine[] | null, point?: SnapPoint | null): void {
     const layer = $('guidesLayer');
     layer.textContent = '';
-    if (!guides || !guides.length) return;
-    guides.forEach(g => {
+    (guides || []).forEach(g => {
         const d = document.createElement('div');
         d.className = 'snap-guide ' + (g.vertical ? 'v' : 'h');
         if (g.vertical) d.style.left = (g.at * state.zoom + state.pan.x) + 'px';
         else d.style.top = (g.at * state.zoom + state.pan.y) + 'px';
         layer.appendChild(d);
     });
+    if (!point) return;
+    const p = document.createElement('div');
+    p.className = 'snap-point snap-' + point.kind;
+    const sx = point.x * state.zoom + state.pan.x;
+    p.style.left = sx + 'px';
+    p.style.top = (point.y * state.zoom + state.pan.y) + 'px';
+    if (sx > layer.clientWidth - 90) p.classList.add('flip');
+    const tag = document.createElement('span');
+    tag.className = 'snap-point-label';
+    tag.textContent = point.label;
+    p.appendChild(tag);
+    layer.appendChild(p);
 }
 
 export function clearSnapGuides(): void { const l = $opt('guidesLayer'); if (l) l.textContent = ''; }

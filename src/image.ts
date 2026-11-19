@@ -1,5 +1,6 @@
 import { state } from './state';
-import { $, loadImage, readFileAsDataURL, round2, toast, uid } from './utils';
+import { $, round2, toast, uid } from './utils';
+import { decodeImageFile, isPsdFile } from './imageimport';
 import { buildElement } from './model';
 import { renderAll } from './render';
 import { commit } from './history';
@@ -14,16 +15,15 @@ export async function handleImageUpload(input: HTMLInputElement): Promise<void> 
     input.value = '';
     if (!file) return;
     try {
-        const dataURL = await readFileAsDataURL(file);
-        const img = await loadImage(dataURL);
+        const decoded = await decodeImageFile(file);
         const maxDim = 400;
-        let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+        let w = decoded.width, h = decoded.height;
         if (w > maxDim || h > maxDim) {
             const k = maxDim / Math.max(w, h);
             w = Math.round(w * k); h = Math.round(h * k);
         }
         const assetId = uid('img');
-        await putAsset(assetId, dataURL);
+        await putAsset(assetId, decoded.dataURL);
         const el = buildElement('image', 0, 0);
         el.w = w; el.h = h;
         el.image = { assetId, originalAssetId: assetId, crop: null };
@@ -31,7 +31,7 @@ export async function handleImageUpload(input: HTMLInputElement): Promise<void> 
         el.x = round2(pos.x); el.y = round2(pos.y);
         state.model.elements.push(el);
         renderAll(); setSelection([el.id]); commit();
-        toast('图片已插入，双击可二次裁剪', 'success');
+        toast(isPsdFile(file) ? 'PSD 合成图已插入（图层合并为图片）' : '图片已插入，双击可二次裁剪', 'success');
     } catch (e) {
         toast('图片载入失败：' + (e as Error).message, 'error');
     }

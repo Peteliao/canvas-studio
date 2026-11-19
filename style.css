@@ -110,7 +110,9 @@ button:disabled { opacity: .38; cursor: not-allowed; }
 .status-item .ic { width: 12px; height: 12px; }
 .status-sep { width: 1px; height: 12px; background: var(--border-strong); }
 .statusbar-spacer, .topbar-spacer, .contextbar-spacer, .spacer { flex: 1; }
-.status-flag { padding: 2px 7px; border-radius: 5px; background: var(--bg-inset); color: var(--text-3); }
+.status-flag { padding: 2px 7px; border-radius: 5px; background: var(--bg-inset); color: var(--text-3); border: 0; font: inherit; line-height: 1.35; }
+button.status-flag { cursor: pointer; transition: background var(--transition), color var(--transition); }
+button.status-flag:hover { color: var(--text); }
 .status-flag.on { background: var(--primary-soft); color: var(--primary); }
 .status-flag.offline { background: rgba(18, 184, 134, .12); color: var(--accent); }
 .measure-toggles { display: inline-flex; align-items: center; gap: 3px; }
@@ -293,6 +295,15 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 .snap-guide { position: absolute; background: #ff3d9a; box-shadow: 0 0 4px rgba(255, 61, 154, .5); }
 .snap-guide.v { width: 1px; top: 0; bottom: 0; }
 .snap-guide.h { height: 1px; left: 0; right: 0; }
+.snap-point { --snap-color: #ff3d9a; position: absolute; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border: 1.5px solid var(--snap-color); border-radius: 50%; background: radial-gradient(circle, #fff 0 2px, transparent 2.5px); box-shadow: 0 0 0 2px rgba(255, 255, 255, .72), 0 0 6px var(--snap-color); }
+.snap-point.snap-center { --snap-color: #f59f00; }
+.snap-point.snap-golden { --snap-color: #d4a017; }
+.snap-point.snap-quadrant { --snap-color: #0ea5e9; }
+.snap-point.snap-midpoint { --snap-color: #8b5cf6; }
+.snap-point.snap-node { --snap-color: #ec4899; }
+.snap-point.snap-canvas { --snap-color: #12b886; }
+.snap-point-label { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); padding: 2px 5px; border-radius: 4px; background: var(--snap-color); color: #fff; font-size: 9.5px; font-weight: 600; line-height: 1.25; letter-spacing: .2px; white-space: nowrap; box-shadow: 0 2px 6px rgba(16, 22, 40, .22); }
+.snap-point.flip .snap-point-label { left: auto; right: 14px; }
 /* ---------- 尺寸标注 HUD：扁平药丸标签 + 尺寸线 ---------- */
 .measure-tag { position: absolute; display: flex; align-items: center; gap: 3px; height: 19px; padding: 0 6px 0 5px; border-radius: 6px; background: var(--primary); color: #fff; font-size: 11px; font-weight: 600; line-height: 1; letter-spacing: .2px; white-space: nowrap; transform: translate(-50%, -50%); box-shadow: 0 1px 2px rgba(16, 22, 40, .2), 0 0 0 1px rgba(255, 255, 255, .18) inset; pointer-events: auto; user-select: none; font-variant-numeric: tabular-nums; transition: box-shadow .12s ease; }
 .measure-tag:hover { box-shadow: 0 3px 10px rgba(16, 22, 40, .26), 0 0 0 1px rgba(255, 255, 255, .26) inset; z-index: 2; }

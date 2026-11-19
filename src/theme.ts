@@ -61,7 +61,8 @@ export function applyViewSettings(): void {
     });
     $('gridOverlay').classList.toggle('on', !!s.grid);
     [$('rulerH'), $('rulerV'), $('rulerCorner')].forEach(n => n.classList.toggle('hidden-ruler', !s.rulers));
-    const flags = $opt('statusSnap'); if (flags) flags.classList.toggle('on', !!s.snap);
+    const flags = $opt('statusSnap');
+    if (flags) { flags.classList.toggle('on', !!s.snap); flags.setAttribute('aria-pressed', String(!!s.snap)); }
     const gf = $opt('statusGrid'); if (gf) gf.classList.toggle('on', !!s.grid);
     state.alignBase = s.alignBase || 'selection';
     const ab = $opt<HTMLSelectElement>('alignBase'); if (ab) ab.value = state.alignBase;

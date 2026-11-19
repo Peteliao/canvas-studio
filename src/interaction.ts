@@ -3,7 +3,7 @@ import { SVG_NS, LINE_STYLES } from './constants';
 import type { CanvasElement, CurveNode, Point, Interaction, LineStyle, StrokeStyle, HandleSide, PenDraft } from './types';
 import { state, nodeMap } from './state';
 import { $, clamp, round2, round3, toast } from './utils';
-import { getEl, selectedEls, sortedElements, buildElement, makeLine, makeCurve, curveSegPts, cubicAt, splitCubic, curveNodeHasIn, curveNodeHasOut, curveLocalBox } from './model';
+import { getEl, selectedEls, sortedElements, buildElement, makeLine, makeCurve, curveSegPts, cubicAt, splitCubic, curveNodeHasIn, curveNodeHasOut, curveLocalBox, curveNodesBox } from './model';
 import { lineHeightFor } from './style';
 import { syncElement, renderAll, applySelectionClasses, syncTransform } from './render';
 import { commit } from './history';
@@ -23,6 +23,7 @@ import { setToggleButton } from './theme';
 import { selectGuide, drawGuides, isOverRuler, deleteGuide, guideGeom } from './guides';
 import { drawMeasure } from './measure';
 import { applyDragSnap, drawSnapGuides, clearSnapGuides } from './snap';
+import { nearestSnapPoint, SNAP_POINT_PX } from './snappoints';
 import { updateLineStyle } from './styles';
 
 type RotateInteraction = Extract<Interaction, { kind: 'rotate' }>;
@@ -415,12 +416,8 @@ function onPointerDown(e: PointerEvent): void {
         const id = d.getAttribute('data-id') || '';
         if (state.isTextEditing && state.editingId === id) return;
         if (state.isTextEditing) finishTextEdit();
-        if (e.altKey) {
-            state.selection = state.selection.filter(x => x !== id);
-            applySelectionClasses(); updateUI();
-        } else {
-            toggleSelection(id, e.ctrlKey || e.metaKey);
-        }
+        if (e.altKey && !state.selection.includes(id)) { e.preventDefault(); return; }
+        if (!e.altKey) toggleSelection(id, e.ctrlKey || e.metaKey);
         const movable = selectedEls().filter(x => !x.locked);
         if (movable.length) {
             state.interaction = {
@@ -536,7 +533,7 @@ function onPointerMove(e: PointerEvent | null): void {
         if (!e.altKey) {
             const snapped = applyDragSnap(it, mx, my);
             mx = snapped.mx; my = snapped.my;
-            drawSnapGuides(snapped.guides);
+            drawSnapGuides(snapped.guides, snapped.point);
         }
         it.items.forEach(o => {
             const el = getEl(o.id); if (!el) return;
@@ -789,9 +786,8 @@ export function removeCurveNode(el: CanvasElement, i: number): void {
 /** 把元素边框收紧到路径实际范围（含控制柄），路径位置保持不动 */
 export function fitCurveBox(el: CanvasElement): void {
     const b = curveLocalBox(el);
-    const pad = 2;
-    const offX = b.left - pad, offY = b.top - pad;
-    const nw = Math.max(4, round2(b.w + pad * 2)), nh = Math.max(4, round2(b.h + pad * 2));
+    const offX = b.left, offY = b.top;
+    const nw = Math.max(1, round2(b.w)), nh = Math.max(1, round2(b.h));
     const oldW = el.w, oldH = el.h;
     // 局部坐标平移 off，保持形状在屏幕上的位置（兼容旋转与自定义枢轴）
     const rad = el.rotation * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
@@ -890,9 +886,19 @@ export function updateCurveNodePanel(el: CanvasElement | null): void {
 function penNodeAt(p: Point): CurveNode {
     return { x: round2(p.x), y: round2(p.y), ix: round2(p.x), iy: round2(p.y), ox: round2(p.x), oy: round2(p.y), t: 'smooth' };
 }
+const PEN_SNAP_IGNORE = new Set<string>();
 export function penPointFromEvent(e: PointerEvent): Point {
     const w = clientToWorld(e.clientX, e.clientY);
-    if (state.settings && state.settings.grid && !e.altKey) {
+    if (e.altKey) { clearSnapGuides(); return w; }
+    if (state.settings.snap) {
+        const target = nearestSnapPoint(w, SNAP_POINT_PX / state.zoom, PEN_SNAP_IGNORE);
+        if (target) {
+            drawSnapGuides(null, target);
+            return { x: target.x, y: target.y };
+        }
+    }
+    clearSnapGuides();
+    if (state.settings.grid) {
         const g = Math.max(1, state.settings.gridSize || 20);
         return { x: Math.round(w.x / g) * g, y: Math.round(w.y / g) * g };
     }
@@ -907,35 +913,38 @@ function penCollapseOutHandle(pen: PenDraft, i: number): boolean {
     return true;
 }
 function penPointerDown(e: PointerEvent): void {
-    const world = penPointFromEvent(e);
+    const raw = clientToWorld(e.clientX, e.clientY);
     const pen = state.pen;
+    if (pen) {
+        // 闭合 / 连点结束 / 收起手柄按原始指针判断，避免吸附点抢走首尾节点
+        if (pen.lastDown && Date.now() - pen.lastDown.t < 340 &&
+            Math.hypot(raw.x - pen.lastDown.x, raw.y - pen.lastDown.y) * state.zoom < 7) {
+            finishPen(false);
+            return;
+        }
+        const first = pen.nodes[0];
+        if (pen.nodes.length >= 2 && Math.hypot(raw.x - first.x, raw.y - first.y) * state.zoom <= 10) {
+            finishPen(true);
+            return;
+        }
+        const last = pen.nodes[pen.nodes.length - 1];
+        // Alt + 点击刚放下的锚点 = 收起它的出手柄，之后下一段即为直线
+        if (e.altKey && last && Math.hypot(raw.x - last.x, raw.y - last.y) * state.zoom <= 10) {
+            if (penCollapseOutHandle(pen, pen.nodes.length - 1)) {
+                state.interaction = null;
+                clearSnapGuides();
+                renderPenDraft();
+                toast('已收起出手柄：下一段为直线', 'success');
+            }
+            return;
+        }
+    }
+    const world = penPointFromEvent(e);
     if (!pen) {
         state.pen = { nodes: [penNodeAt(world)], cursor: world, closed: false,
             lastDown: { x: world.x, y: world.y, t: Date.now() } };
         state.interaction = { kind: 'pendrag', i: 0, sx: e.clientX, sy: e.clientY };
         renderPenDraft();
-        return;
-    }
-    // 连点两下 = 结束当前路径
-    if (pen.lastDown && Date.now() - pen.lastDown.t < 340 &&
-        Math.hypot(world.x - pen.lastDown.x, world.y - pen.lastDown.y) * state.zoom < 7) {
-        finishPen(false);
-        return;
-    }
-    // 点回起点 = 闭合路径
-    const first = pen.nodes[0];
-    if (pen.nodes.length >= 2 && Math.hypot(world.x - first.x, world.y - first.y) * state.zoom <= 10) {
-        finishPen(true);
-        return;
-    }
-    const last = pen.nodes[pen.nodes.length - 1];
-    // Alt + 点击刚放下的锚点 = 收起它的出手柄，之后下一段即为直线
-    if (e.altKey && last && Math.hypot(world.x - last.x, world.y - last.y) * state.zoom <= 10) {
-        if (penCollapseOutHandle(pen, pen.nodes.length - 1)) {
-            state.interaction = null;
-            renderPenDraft();
-            toast('已收起出手柄：下一段为直线', 'success');
-        }
         return;
     }
     // Alt + 落新点 = 顺带收起上一个节点的出手柄，让新生成的这一段是直线
@@ -972,24 +981,20 @@ function penDragMove(e: PointerEvent): void {
 export function cancelPen(): void {
     state.pen = null;
     state.interaction = null;
+    clearSnapGuides();
     renderPenDraft();
 }
 export function finishPen(close: boolean, keepTool?: boolean): void {
     const pen = state.pen;
     state.pen = null;
     state.interaction = null;
+    clearSnapGuides();
     renderPenDraft();
     if (pen && pen.nodes.length >= 2) {
         const nodes = pen.nodes;
-        let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
-        nodes.forEach(n => {
-            ([[n.x, n.y], [n.ix, n.iy], [n.ox, n.oy]] as [number, number][]).forEach(([x, y]) => {
-                l = Math.min(l, x); t = Math.min(t, y); r = Math.max(r, x); b = Math.max(b, y);
-            });
-        });
-        const pad = 4;
-        const x = round2(l - pad), y = round2(t - pad);
-        const w = Math.max(8, round2(r - l + pad * 2)), h = Math.max(8, round2(b - t + pad * 2));
+        const b = curveNodesBox(nodes, 1, 1, !!close);
+        const x = round2(b.left), y = round2(b.top);
+        const w = Math.max(1, round2(b.w)), h = Math.max(1, round2(b.h));
         const el = buildElement('curve', x, y);
         el.w = w; el.h = h;
         const color = (state.settings.recentColors && state.settings.recentColors[0]) || '#1c2230';

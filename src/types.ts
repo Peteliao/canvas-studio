@@ -147,6 +147,8 @@ export interface DragItem { id: string; x: number; y: number; }
 export interface ResizeItem { id: string; x: number; y: number; w: number; h: number; }
 export interface RotateItem extends ResizeItem { rotation: number; pivotX: number; pivotY: number; }
 export interface SnapLine { vertical: boolean; at: number; }
+export type SnapPointKind = 'endpoint' | 'center' | 'golden' | 'quadrant' | 'midpoint' | 'node' | 'canvas';
+export interface SnapPoint { x: number; y: number; kind: SnapPointKind; label: string; elementId?: string; }
 
 export type Interaction =
     | { kind: 'pan'; lastX: number; lastY: number }

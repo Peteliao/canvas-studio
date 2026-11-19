@@ -2,7 +2,8 @@
 import { VERSION } from './constants';
 import type { CanvasElement } from './types';
 import { state } from './state';
-import { $, toast, uid, deepCopy, round2, readFileAsDataURL, loadImage } from './utils';
+import { $, toast, uid, deepCopy, round2 } from './utils';
+import { decodeImageFile, isImageFile, isPsdFile } from './imageimport';
 import { validateElement, selectedEls, nextZIndex, buildElement, makeText, makeImage } from './model';
 import { putAsset } from './db';
 import { renderAll } from './render';
@@ -56,15 +57,14 @@ export async function pasteFromClipboardSystem(): Promise<void> {
     toast(`已粘贴 ${clones.length} 个元素`, 'success');
 }
 async function insertImageFileAt(file: File, clientX?: number, clientY?: number): Promise<boolean> {
-    if (!file || !/^image\//.test(file.type)) return false;
+    if (!file || !isImageFile(file)) return false;
     try {
-        const dataURL = await readFileAsDataURL(file);
-        const img = await loadImage(dataURL);
+        const decoded = await decodeImageFile(file);
         const max = 400;
-        let w = img.width, h = img.height;
+        let w = decoded.width, h = decoded.height;
         if (w > max || h > max) { const k = max / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k); }
         const assetId = uid('asset');
-        await putAsset(assetId, dataURL);
+        await putAsset(assetId, decoded.dataURL);
         const el = buildElement('image', 0, 0);
         el.w = w; el.h = h;
         el.image = makeImage({ assetId, originalAssetId: assetId });
@@ -74,7 +74,7 @@ async function insertImageFileAt(file: File, clientX?: number, clientY?: number)
         el.y = round2(world.y - (clientX === undefined ? h / 2 : 0));
         state.model.elements.push(el);
         renderAll(); setSelection([el.id]); commit();
-        toast('图片已导入，双击可裁剪', 'success');
+        toast(isPsdFile(file) ? 'PSD 合成图已导入（图层合并为图片）' : '图片已导入，双击可裁剪', 'success');
         return true;
     } catch (err) { toast('图片导入失败：' + (err as Error).message, 'error'); return false; }
 }
@@ -104,7 +104,7 @@ export function bindDropImport(): void {
             const files = Array.from(dt.files || []);
             if (files.length) {
                 for (const f of files) {
-                    if (/^image\//.test(f.type)) { await insertImageFileAt(f, e.clientX, e.clientY); continue; }
+                    if (isImageFile(f)) { await insertImageFileAt(f, e.clientX, e.clientY); continue; }
                     if (/\.(canvas|json)$/i.test(f.name) || f.type === 'application/json') { await importProjectFile(f); continue; }
                     if (/^text\//.test(f.type) || /\.txt$/i.test(f.name)) {
                         insertTextAt(await f.text(), e.clientX, e.clientY); continue;

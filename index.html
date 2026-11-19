@@ -152,7 +152,7 @@
           <button data-act="toggleGrid"><svg class="ic"><use href="#i-grid"/></svg>显示网格 <kbd>Ctrl+'</kbd></button>
           <button data-act="toggleRulers"><svg class="ic"><use href="#i-ruler"/></svg>显示标尺</button>
           <button data-act="toggleGuideLines" title="辅助线：从标尺拖出创建，可旋转/删除，与物件双向测距"><svg class="ic"><use href="#i-guide"/></svg>显示辅助线</button>
-          <button data-act="toggleSnap"><svg class="ic"><use href="#i-magnet"/></svg>智能吸附</button>
+          <button data-act="toggleSnap" title="智能捕捉：端点 / 中心 / 黄金分割 / 圆心 / 象限点，以及边缘、辅助线与网格"><svg class="ic"><use href="#i-magnet"/></svg>智能捕捉 <kbd>6</kbd></button>
           <button data-act="toggleGuides" title="尺寸标注：蓝=自身尺寸与画布边距，玫红=相邻物件间距（负值=重叠），橙=边缘对齐差（0=对齐），青=辅助线距离；点击数值可直接编辑"><svg class="ic"><use href="#i-move"/></svg>尺寸标注</button>
           <div class="menu-sep"></div>
           <button data-act="toggleTheme"><svg class="ic"><use href="#i-moon"/></svg>切换主题</button>
@@ -250,7 +250,7 @@
     <div class="contextbar-spacer"></div>
 
     <div class="tool-group">
-      <button class="icon-btn toggleable" id="btnSnap" data-act="toggleSnap" title="智能吸附" aria-pressed="true"><svg class="ic"><use href="#i-magnet"/></svg></button>
+      <button class="icon-btn toggleable" id="btnSnap" data-act="toggleSnap" title="智能捕捉：端点 / 中心 / 黄金分割 / 圆心 / 象限点（6）" aria-pressed="true"><svg class="ic"><use href="#i-magnet"/></svg></button>
       <button class="icon-btn toggleable" id="btnGrid" data-act="toggleGrid" title="显示网格" aria-pressed="false"><svg class="ic"><use href="#i-grid"/></svg></button>
       <button class="icon-btn toggleable" id="btnRulers" data-act="toggleRulers" title="显示标尺（从标尺拖出可创建辅助线）" aria-pressed="true"><svg class="ic"><use href="#i-ruler"/></svg></button>
       <button class="icon-btn toggleable" id="btnGuideLines" data-act="toggleGuideLines" title="显示辅助线：从标尺拖出创建，可旋转/删除/测距" aria-pressed="true"><svg class="ic"><use href="#i-guide"/></svg></button>
@@ -304,7 +304,7 @@
           <input type="color" class="bucket-color-hidden" id="bucketColorInput" value="#4f6bff" tabindex="-1" aria-hidden="true">
         </div>
         <button class="rail-btn" id="railText" data-act="setTool" data-arg="text" title="文本工具 (T)：在画布点击或拖拽框创建文本"><svg class="ic"><use href="#i-font"/></svg><span>文本</span></button>
-        <button class="rail-btn" data-act="addImage" title="插入图片"><svg class="ic"><use href="#i-image"/></svg><span>图片</span></button>
+        <button class="rail-btn" data-act="addImage" title="插入图片（PNG / JPEG / WebP / GIF / SVG / PSD / PSB）"><svg class="ic"><use href="#i-image"/></svg><span>图片</span></button>
       </div>
     </aside>
 
@@ -866,7 +866,7 @@
       <button type="button" class="status-flag measure-flag on" id="statusMeasureAlign" data-act="toggleMeasure" data-arg="align" aria-pressed="true" title="与邻近物件的边缘对齐差：点击开关，快捷键 4"><span class="measure-dot align" aria-hidden="true"></span>对齐<span class="measure-hot">4</span></button>
       <button type="button" class="status-flag measure-flag on" id="statusMeasureGuide" data-act="toggleMeasure" data-arg="guide" aria-pressed="true" title="物件与辅助线的距离：点击开关，快捷键 5"><span class="measure-dot guide" aria-hidden="true"></span>辅助线<span class="measure-hot">5</span></button>
     </span>
-    <span class="status-item status-flag on" id="statusSnap" title="智能吸附">吸附</span>
+    <button type="button" class="status-item status-flag on" id="statusSnap" data-act="toggleSnap" title="智能捕捉：端点 / 中心 / 黄金分割 / 圆心 / 象限点，以及边缘、辅助线与网格（快捷键 6）" aria-pressed="true">捕捉<span class="measure-hot">6</span></button>
     <span class="status-item status-flag" id="statusGrid" title="网格">网格</span>
     <span class="status-item status-flag on" id="statusSaved" title="离线自动保存">已自动保存</span>
     <span class="status-item status-flag offline" title="无外部网络请求"><svg class="ic"><use href="#i-check"/></svg> 完全离线</span>
@@ -874,7 +874,7 @@
 </div>
 
 <div id="sizeTooltip">W: 100 H: 100</div>
-<input type="file" id="imageInput" accept="image/*" style="display:none;">
+<input type="file" id="imageInput" accept="image/*,.psd,.psb" style="display:none;">
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <!-- 图片裁剪 -->
