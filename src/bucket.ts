@@ -108,13 +108,15 @@ export function syncBucketSwatch(): void {
         sSlot.title = '描边色 ' + bucketColorLabel('stroke') + editHint;
         sSlot.classList.toggle('active', state.bucketSlot === 'stroke');
     }
-    const noneBtn = $opt('bucketNoneBtn');
-    if (noneBtn) {
-        const active = state.bucketSlot === 'stroke' ? 'stroke' : 'fill';
-        noneBtn.title = '无' + bucketSlotLabel(active)
-            + (bucketEditsSelection() ? '：去掉选中物件的' + bucketSlotLabel(active) : '：将当前色槽（' + bucketSlotLabel(active) + '）设为“无”');
-        noneBtn.classList.toggle('active', bucketColor(active) === 'none');
-    }
+    ([['bucketNoneFill', 'fill'], ['bucketNoneStroke', 'stroke']] as [string, BucketSlot][]).forEach(([id, slot]) => {
+        const noneBtn = $opt(id);
+        if (!noneBtn) return;
+        const label = bucketSlotLabel(slot);
+        noneBtn.title = bucketEditsSelection()
+            ? '无' + label + '：去掉选中物件的' + label
+            : '无' + label + '：把' + label + '色槽设为“无”，颜料桶不再涂' + label;
+        noneBtn.classList.toggle('active', bucketColor(slot) === 'none');
+    });
     const btn = $opt('railBucket');
     if (btn) btn.title = '颜料桶 (B)：填充 ' + bucketColorLabel('fill') + ' · 描边 ' + bucketColorLabel('stroke')
         + '；点内部改填充、点边缘改描边，Shift 强制描边，Alt+点击吸色，拖动连续上色';

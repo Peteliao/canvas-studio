@@ -251,13 +251,19 @@ export function bindDelegates(): void {
         bucketColorInput.addEventListener('input', () => previewBucketPicker(bucketColorInput.value));
         bucketColorInput.addEventListener('change', () => commitBucketPicker(bucketColorInput.value));
     }
-    const bucketNoneBtn = $opt('bucketNoneBtn');
-    if (bucketNoneBtn) bucketNoneBtn.addEventListener('click', e => {
-        e.stopPropagation();
-        const slot = state.bucketSlot || 'fill';
-        if (bucketEditsSelection()) applySlotToSelection(slot, 'none');
-        else setBucketColor(slot, 'none');
-        toast('已设为无' + bucketSlotLabel(slot), 'success');
+    ([['bucketNoneFill', 'fill'], ['bucketNoneStroke', 'stroke']] as [string, BucketSlot][]).forEach(([id, slot]) => {
+        const n = $opt(id);
+        if (!n) return;
+        n.addEventListener('click', e => {
+            e.stopPropagation();
+            if (bucketEditsSelection()) {
+                const changed = applySlotToSelection(slot, 'none');
+                toast(changed ? '已去除选中物件的' + bucketSlotLabel(slot) : '选中物件没有可去除的' + bucketSlotLabel(slot), changed ? 'success' : 'error');
+            } else {
+                setBucketColor(slot, 'none');
+                toast('色槽已设为无' + bucketSlotLabel(slot), 'success');
+            }
+        });
     });
     document.addEventListener('mouseleave', () => { if (state.tool === 'bucket') hideBucketHover(); });
 

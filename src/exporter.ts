@@ -248,6 +248,8 @@ export async function drawExportElement(ctx: CanvasRenderingContext2D, el: Canva
 }
 
 export async function renderModelToCanvas(scale: number, opts?: ExportOpts): Promise<HTMLCanvasElement> {
+    // 等待内置字体加载完成，避免首次使用思源字体导出时回退到系统字体
+    if (typeof document.fonts !== 'undefined' && document.fonts.ready) await document.fonts.ready;
     const o = opts || {};
     const bounds = o.bounds || { x: 0, y: 0, w: state.model.canvas.w, h: state.model.canvas.h };
     const c = document.createElement('canvas');

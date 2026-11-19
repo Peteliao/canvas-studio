@@ -24,6 +24,20 @@ export function isInputActive(): boolean {
     const a = document.activeElement;
     return !!a && (a.tagName === 'INPUT' || a.tagName === 'SELECT' || a.tagName === 'TEXTAREA' || (a as HTMLElement).isContentEditable);
 }
+// 仅文本录入类控件（文本输入框 / 多行文本 / 下拉 / 可编辑区）需要拦截快捷键；
+// 滑块、颜色、开关等控件聚焦时快捷键应照常工作。
+export function isTextEntryActive(): boolean {
+    const a = document.activeElement as HTMLElement | null;
+    if (!a) return false;
+    if (a.isContentEditable) return true;
+    if (a.tagName === 'TEXTAREA' || a.tagName === 'SELECT') return true;
+    if (a.tagName === 'INPUT') {
+        const type = (a as HTMLInputElement).type;
+        return type !== 'range' && type !== 'color' && type !== 'checkbox' && type !== 'radio'
+            && type !== 'button' && type !== 'submit' && type !== 'reset' && type !== 'file';
+    }
+    return false;
+}
 export function bindHotkeys(): void {
     document.addEventListener('keydown', e => {
         if (isDialogOpen()) {
@@ -31,6 +45,15 @@ export function bindHotkeys(): void {
             return;
         }
         const ctrl = e.ctrlKey || e.metaKey;
+        // 数字键 1–5：单独开关五类标注（尺寸 / 边距 / 间距 / 对齐 / 辅助线）
+        // 放在文本拦截之前：颜色/滑块等控件聚焦后也能直接使用；文本输入框与下拉仍保留原生行为
+        if (!ctrl && !e.altKey && !isTextEntryActive() && e.key >= '1' && e.key <= '5' && e.key.length === 1) {
+            e.preventDefault();
+            const kinds = ['size', 'canvas', 'gap', 'align', 'guide'] as const;
+            const kind = kinds[Number(e.key) - 1];
+            if (kind) toggleMeasureType(kind);
+            return;
+        }
         const typing = isInputActive();
 
         // 编辑态一律让浏览器原生处理，避免文本内撤销误重建画布 / 丢字
@@ -67,14 +90,6 @@ export function bindHotkeys(): void {
         if (!ctrl && !e.altKey && (e.key === 'p' || e.key === 'P')) { setTool(state.tool === 'pen' ? 'select' : 'pen'); return; }
         if (!ctrl && !e.altKey && (e.key === 'b' || e.key === 'B')) { setTool('bucket'); return; }
         if (!ctrl && !e.altKey && (e.key === 'r' || e.key === 'R')) { addShape('rect'); return; }
-        // 数字键 1–5：单独开关五类标注（尺寸 / 边距 / 间距 / 对齐 / 辅助线）
-        if (!ctrl && !e.altKey && e.key >= '1' && e.key <= '5' && e.key.length === 1) {
-            e.preventDefault();
-            const kinds = ['size', 'canvas', 'gap', 'align', 'guide'] as const;
-            const kind = kinds[Number(e.key) - 1];
-            if (kind) toggleMeasureType(kind);
-            return;
-        }
         if (state.pen) {
             if (e.key === 'Enter') { e.preventDefault(); finishPen(false); return; }
             if (e.key === 'Escape') { e.preventDefault(); cancelPen(); return; }

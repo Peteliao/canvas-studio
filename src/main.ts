@@ -1,4 +1,6 @@
 /* 启动入口 */
+import '@fontsource-variable/noto-sans-sc';
+import '@fontsource-variable/noto-serif-sc';
 import { LEGACY_KEY } from './constants';
 import { state } from './state';
 import { $, toast } from './utils';

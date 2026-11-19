@@ -299,7 +299,10 @@
             <div class="rail-stroke-head"><span>粗细</span><span id="railStrokeWidthVal">—</span></div>
             <input type="range" id="railStrokeWidth" min="0" max="30" step="1" value="0" aria-label="描边粗细" title="选中物件后可调整描边粗细" disabled>
           </div>
-          <button class="rail-color-none" id="bucketNoneBtn" title="无填充：将当前色槽设为“无”" aria-label="无填充或无描边">无</button>
+          <div class="rail-none-row">
+            <button class="rail-color-none" id="bucketNoneFill" title="无填充：去掉选中物件的填充" aria-label="无填充">无填充</button>
+            <button class="rail-color-none" id="bucketNoneStroke" title="无描边：去掉选中物件的描边" aria-label="无描边">无描边</button>
+          </div>
           <input type="color" class="bucket-color-hidden" id="bucketColorInput" value="#4f6bff" tabindex="-1" aria-hidden="true">
         </div>
         <button class="rail-btn" id="railText" data-act="setTool" data-arg="text" title="文本工具 (T)：在画布点击或拖拽框创建文本"><svg class="ic"><use href="#i-font"/></svg><span>文本</span></button>
@@ -582,6 +585,10 @@
                   <option value="'PingFang SC', sans-serif|400">苹方</option>
                   <option value="'SimSun', serif|400">宋体</option>
                   <option value="'KaiTi', serif|400">楷体</option>
+                </optgroup>
+                <optgroup label="思源字体（内置 · 离线可用）">
+                  <option value="'Noto Sans SC Variable', 'Source Han Sans SC', 'Microsoft YaHei', sans-serif|400">思源黑体</option>
+                  <option value="'Noto Serif SC Variable', 'Source Han Serif SC', 'SimSun', serif|400">思源宋体</option>
                 </optgroup>
                 <optgroup label="西文字体">
                   <option value="'Segoe UI', sans-serif|400">Segoe UI</option>

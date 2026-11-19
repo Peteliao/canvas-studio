@@ -200,6 +200,7 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 .rail-color-slot.active { border-color: var(--primary-ring); background: var(--primary-soft); color: var(--primary); font-weight: 600; }
 .rail-color-chip { display: block; width: 30px; height: 10px; border-radius: 2px; border: 1px solid var(--border-strong); background: #4f6bff; }
 .rail-color-chip.none, .bucket-hover-chip.none { background: linear-gradient(to top right, transparent calc(50% - 1px), #e5484d calc(50% - 1px), #e5484d calc(50% + 1px), transparent calc(50% + 1px)), var(--bg-surface); }
+.rail-none-row { display: flex; flex-direction: column; gap: 2px; width: 100%; }
 .rail-color-none { width: 100%; padding: 2px 0; border: 1px dashed var(--border-strong); border-radius: var(--radius); background: transparent; color: var(--text-2); font-size: 10px; line-height: 1.4; cursor: pointer; }
 .rail-color-none:hover { background: var(--bg-hover); color: var(--primary); }
 .rail-color-none.active { border-color: var(--primary-ring); border-style: solid; background: var(--primary-soft); color: var(--primary); font-weight: 600; }
