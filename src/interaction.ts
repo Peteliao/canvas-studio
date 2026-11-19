@@ -1,6 +1,6 @@
 /* 交互（Pointer Events + rAF）：拖拽 / 缩放 / 旋转 / 枢轴 / 曲线节点 / 钢笔 */
 import { SVG_NS, LINE_STYLES } from './constants';
-import type { CanvasElement, CurveNode, Point, Interaction, LineStyle, StrokeStyle, HandleSide, PenDraft } from './types';
+import type { CanvasElement, CurveNode, Point, Interaction, LineStyle, StrokeStyle, HandleSide, PenDraft, SnapPoint } from './types';
 import { state, nodeMap } from './state';
 import { $, clamp, round2, round3, toast } from './utils';
 import { getEl, selectedEls, sortedElements, buildElement, makeLine, makeCurve, curveSegPts, cubicAt, splitCubic, curveNodeHasIn, curveNodeHasOut, curveLocalBox, curveNodesBox } from './model';
@@ -45,6 +45,23 @@ export function worldToLocalPoint(el: CanvasElement, world: Point): Point {
     const P = pivotWorld(el);
     const dx = world.x - P.x, dy = world.y - P.y;
     return { x: el.pivotX * el.w + dx * cos + dy * sin, y: el.pivotY * h - dx * sin + dy * cos };
+}
+/** 缩放手柄对应的世界坐标（角点或边中点，旋转与自定义枢轴均适用） */
+function resizerAnchorWorld(el: CanvasElement, dir: string): SnapPoint {
+    const h = el.type === 'line' ? lineHeightFor(el) : el.h;
+    const fx = dir.includes('w') ? 0 : dir.includes('e') ? 1 : 0.5;
+    const fy = dir.includes('n') ? 0 : dir.includes('s') ? 1 : 0.5;
+    const rad = el.rotation * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+    const p = pivotWorld(el);
+    const dx = fx * el.w - el.pivotX * el.w, dy = fy * h - el.pivotY * h;
+    const corner = dir.length > 1;
+    return {
+        x: p.x + dx * cos - dy * sin,
+        y: p.y + dx * sin + dy * cos,
+        kind: corner ? 'endpoint' : 'midpoint',
+        label: corner ? '角点' : '边中点',
+        elementId: el.id
+    };
 }
 /** 局部像素坐标 → 曲线比例坐标 */
 export function curveNorm(el: CanvasElement, loc: Point): Point {
@@ -147,6 +164,12 @@ export function initCanvasInteraction(): void {
     }, { passive: false });
 
     window.addEventListener('pointerdown', onPointerDown);
+    const syncAnchorCursor = (e: KeyboardEvent): void => {
+        viewport.classList.toggle('anchor-ready', !!e.ctrlKey || !!e.metaKey);
+    };
+    document.addEventListener('keydown', syncAnchorCursor);
+    document.addEventListener('keyup', syncAnchorCursor);
+    window.addEventListener('blur', () => viewport.classList.remove('anchor-ready'));
     // 从标尺拖出辅助线：上标尺→水平线，左标尺→垂直线；拖回标尺放弃/删除
     ([['rulerH', 0], ['rulerV', 90]] as [string, number][]).forEach(([id, angle]) => {
         $(id).addEventListener('pointerdown', e => {
@@ -388,8 +411,18 @@ function onPointerDown(e: PointerEvent): void {
         if (!state.selection.includes(el.id)) setSelection([el.id]);
         const box = selectionAABB();
         if (!box) return;
+        const dir = resizer.getAttribute('data-dir') || '';
+        if (e.ctrlKey || e.metaKey) {
+            state.interaction = {
+                kind: 'drag', startX: e.clientX, startY: e.clientY, startBox: box,
+                items: selectedEls().filter(x => !x.locked).map(x => ({ id: x.id, x: x.x, y: x.y })),
+                anchor: resizerAnchorWorld(el, dir)
+            };
+            $('viewport').classList.add('anchor-drag');
+            e.preventDefault(); return;
+        }
         state.interaction = {
-            kind: 'resize', dir: resizer.getAttribute('data-dir') || '', startX: e.clientX, startY: e.clientY,
+            kind: 'resize', dir, startX: e.clientX, startY: e.clientY,
             box, items: selectedEls().filter(x => !x.locked).map(x => ({ id: x.id, x: x.x, y: x.y, w: x.w, h: x.h }))
         };
         e.preventDefault(); return;
@@ -421,7 +454,7 @@ function onPointerDown(e: PointerEvent): void {
         const movable = selectedEls().filter(x => !x.locked);
         if (movable.length) {
             state.interaction = {
-                kind: 'drag', startX: e.clientX, startY: e.clientY,
+                kind: 'drag', startX: e.clientX, startY: e.clientY, startBox: selectionAABB(),
                 items: movable.map(x => ({ id: x.id, x: x.x, y: x.y }))
             };
         }
@@ -449,13 +482,17 @@ function onPointerMove(e: PointerEvent | null): void {
     const it = state.interaction;
     if (!it) {
         if (state.tool === 'bucket') { updateBucketHover(e); return; }
-        if (state.tool === 'pen' && state.pen) {
+        if (state.tool === 'pen') {
+            // 落点前也预览捕捉特征点；指针进入面板时收起，避免标记停留在画布上
+            if (isChromeUI(e.target as HTMLElement)) { clearSnapGuides(); return; }
             const w = penPointFromEvent(e);
             const pen = state.pen;
-            const last = pen.nodes[pen.nodes.length - 1];
-            if (last && (Math.abs(w.x - pen.cursor.x) > 0.2 || Math.abs(w.y - pen.cursor.y) > 0.2)) {
-                pen.cursor = w;
-                renderPenDraft();
+            if (pen) {
+                const last = pen.nodes[pen.nodes.length - 1];
+                if (last && (Math.abs(w.x - pen.cursor.x) > 0.2 || Math.abs(w.y - pen.cursor.y) > 0.2)) {
+                    pen.cursor = w;
+                    renderPenDraft();
+                }
             }
         }
         return;
@@ -533,7 +570,11 @@ function onPointerMove(e: PointerEvent | null): void {
         if (!e.altKey) {
             const snapped = applyDragSnap(it, mx, my);
             mx = snapped.mx; my = snapped.my;
-            drawSnapGuides(snapped.guides, snapped.point);
+            drawSnapGuides(snapped.guides, snapped.point, snapped.anchor);
+        } else if (it.anchor) {
+            drawSnapGuides(null, null, { ...it.anchor, x: it.anchor.x + mx, y: it.anchor.y + my });
+        } else {
+            clearSnapGuides();
         }
         it.items.forEach(o => {
             const el = getEl(o.id); if (!el) return;
@@ -709,7 +750,7 @@ export function endInteraction(): void {
         if (endedKind && n.matches(':hover') && n._hidePeekLater) n._hidePeekLater();
         else n.classList.remove('pivot-peek');
     });
-    $('viewport').classList.remove('panning');
+    $('viewport').classList.remove('panning', 'anchor-drag');
     state.interaction = null;
     clearSnapGuides();
     refreshStudioUI();

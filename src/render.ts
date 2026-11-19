@@ -54,6 +54,7 @@ export function buildNode(el: CanvasElement): HTMLDivElement {
         const r = document.createElement('div');
         r.className = 'resizer resizer-' + dir;
         r.dataset.dir = dir;
+        r.title = '拖动缩放；按住 Ctrl / ⌘ 拖动：以该点锚定移动并吸附特征点';
         d.appendChild(r);
     });
     const rotLine = document.createElement('div'); rotLine.className = 'rotator-line'; d.appendChild(rotLine);

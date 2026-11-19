@@ -36,17 +36,25 @@ export function snapCandidates(ignoreIds: Set<string>): { xs: number[]; ys: numb
     return { xs, ys };
 }
 
-export function applyDragSnap(it: DragInteraction, mx: number, my: number): { mx: number; my: number; guides: SnapLine[]; point: SnapPoint | null } {
-    if (!state.settings.snap) return { mx, my, guides: [], point: null };
+export function applyDragSnap(it: DragInteraction, mx: number, my: number): { mx: number; my: number; guides: SnapLine[]; point: SnapPoint | null; anchor?: SnapPoint } {
+    const anchorSource = it.anchor
+        ? { ...it.anchor, x: it.anchor.x + mx, y: it.anchor.y + my }
+        : null;
+    if (!state.settings.snap) return { mx, my, guides: [], point: null, anchor: anchorSource || undefined };
     const ids = new Set(it.items.map(o => o.id));
     const { sources, targets } = snapDataFor(it);
-    const pointSnap = nearestPointSnap(sources, targets, mx, my, SNAP_POINT_PX / state.zoom);
+    // Ctrl + 手柄拖动：把被抓住的角点 / 边中点作为唯一吸附源，优先精确落到特征点
+    const pointSnap = nearestPointSnap(it.anchor ? [it.anchor] : sources, targets, mx, my, SNAP_POINT_PX / state.zoom);
     if (pointSnap) {
-        return { mx: mx + pointSnap.dx, my: my + pointSnap.dy, guides: [], point: pointSnap.target };
+        const ax = mx + pointSnap.dx, ay = my + pointSnap.dy;
+        return {
+            mx: ax, my: ay, guides: [], point: pointSnap.target,
+            anchor: it.anchor ? { ...it.anchor, x: it.anchor.x + ax, y: it.anchor.y + ay } : undefined
+        };
     }
     const { xs, ys } = snapCandidates(ids);
     const start = it.startBox || (it.startBox = selectionAABB());
-    if (!start) return { mx, my, guides: [], point: null };
+    if (!start) return { mx, my, guides: [], point: null, anchor: anchorSource || undefined };
     const cur = { left: start.left + mx, right: start.right + mx, cx: start.cx + mx,
                   top: start.top + my, bottom: start.bottom + my, cy: start.cy + my };
     const threshold = 6 / state.zoom;
@@ -77,10 +85,10 @@ export function applyDragSnap(it: DragInteraction, mx: number, my: number): { mx
             }
         }
     }
-    return { mx, my, guides, point: null };
+    return { mx, my, guides, point: null, anchor: it.anchor ? { ...it.anchor, x: it.anchor.x + mx, y: it.anchor.y + my } : undefined };
 }
 
-export function drawSnapGuides(guides: SnapLine[] | null, point?: SnapPoint | null): void {
+export function drawSnapGuides(guides: SnapLine[] | null, point?: SnapPoint | null, anchor?: SnapPoint | null): void {
     const layer = $('guidesLayer');
     layer.textContent = '';
     (guides || []).forEach(g => {
@@ -90,6 +98,13 @@ export function drawSnapGuides(guides: SnapLine[] | null, point?: SnapPoint | nu
         else d.style.top = (g.at * state.zoom + state.pan.y) + 'px';
         layer.appendChild(d);
     });
+    if (anchor) {
+        const a = document.createElement('div');
+        a.className = 'snap-anchor';
+        a.style.left = (anchor.x * state.zoom + state.pan.x) + 'px';
+        a.style.top = (anchor.y * state.zoom + state.pan.y) + 'px';
+        layer.appendChild(a);
+    }
     if (!point) return;
     const p = document.createElement('div');
     p.className = 'snap-point snap-' + point.kind;

@@ -278,6 +278,8 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 .canvas-transform-layer { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; z-index: 2; }
 .canvas { background-color: #fff; position: relative; overflow: visible; box-shadow: 0 6px 32px rgba(24, 32, 56, .16); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
 .guides-layer, .measure-layer { position: absolute; inset: 0; pointer-events: none; z-index: 6; overflow: hidden; }
+/* 捕捉点须浮在选中元素与手柄之上，钢笔悬停时也能清晰看到 */
+.guides-layer { z-index: 20000; }
 .guide-layer { position: absolute; inset: 0; pointer-events: none; z-index: 5; overflow: hidden; }
 .guide-line { position: absolute; height: 8px; pointer-events: auto; }
 .guide-line::before { content: ''; position: absolute; left: 0; right: 0; top: 3.5px; height: 1px; background: repeating-linear-gradient(90deg, var(--guide) 0 7px, transparent 7px 12px); filter: drop-shadow(0 0 1px var(--line-halo)) drop-shadow(0 0 1px var(--line-halo)); }
@@ -304,6 +306,10 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 .snap-point.snap-canvas { --snap-color: #12b886; }
 .snap-point-label { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); padding: 2px 5px; border-radius: 4px; background: var(--snap-color); color: #fff; font-size: 9.5px; font-weight: 600; line-height: 1.25; letter-spacing: .2px; white-space: nowrap; box-shadow: 0 2px 6px rgba(16, 22, 40, .22); }
 .snap-point.flip .snap-point-label { left: auto; right: 14px; }
+.snap-anchor { position: absolute; width: 13px; height: 13px; margin: -6.5px 0 0 -6.5px; border-radius: 50%; border: 1.5px solid #14b8a6; background: rgba(20, 184, 166, .16); box-shadow: 0 0 0 2px rgba(255, 255, 255, .72); }
+.snap-anchor::before, .snap-anchor::after { content: ''; position: absolute; left: 50%; top: 50%; background: #0f9f8f; border-radius: 1px; transform: translate(-50%, -50%); }
+.snap-anchor::before { width: 7px; height: 1.5px; }
+.snap-anchor::after { width: 1.5px; height: 7px; }
 /* ---------- 尺寸标注 HUD：扁平药丸标签 + 尺寸线 ---------- */
 .measure-tag { position: absolute; display: flex; align-items: center; gap: 3px; height: 19px; padding: 0 6px 0 5px; border-radius: 6px; background: var(--primary); color: #fff; font-size: 11px; font-weight: 600; line-height: 1; letter-spacing: .2px; white-space: nowrap; transform: translate(-50%, -50%); box-shadow: 0 1px 2px rgba(16, 22, 40, .2), 0 0 0 1px rgba(255, 255, 255, .18) inset; pointer-events: auto; user-select: none; font-variant-numeric: tabular-nums; transition: box-shadow .12s ease; }
 .measure-tag:hover { box-shadow: 0 3px 10px rgba(16, 22, 40, .26), 0 0 0 1px rgba(255, 255, 255, .26) inset; z-index: 2; }
@@ -353,6 +359,9 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 
 .resizer { width: 9px; height: 9px; background: var(--bg-surface); border: 1.5px solid var(--primary); position: absolute; display: none; z-index: 10000; border-radius: 50%; box-shadow: var(--shadow-sm); }
 .canvas-element.active .resizer { display: block; }
+.viewport.anchor-ready .canvas-element.active .resizer { cursor: move; }
+.viewport.anchor-ready .canvas-element.active .resizer:hover { border-color: var(--warn); box-shadow: 0 0 0 4px rgba(247, 144, 9, .22), var(--shadow-sm); }
+.viewport.anchor-drag, .viewport.anchor-drag .canvas-element, .viewport.anchor-drag .canvas-element * { cursor: grabbing !important; }
 .resizer-nw { top: -5px; left: -5px; cursor: nwse-resize; }
 .resizer-ne { top: -5px; right: -5px; cursor: nesw-resize; }
 .resizer-sw { bottom: -5px; left: -5px; cursor: nesw-resize; }
@@ -413,7 +422,7 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 .pen-layer .pen-node { fill: var(--bg-surface); stroke: var(--primary); stroke-width: 1.8; }
 .pen-layer .pen-node.first { fill: var(--accent); stroke: var(--bg-surface); }
 .pen-layer .pen-handle { fill: var(--bg-surface); stroke: var(--warn); stroke-width: 1.5; }
-.viewport.tool-pen { cursor: crosshair; }
+.viewport.tool-pen, .viewport.tool-pen .canvas-element, .viewport.tool-pen .canvas-element * { cursor: crosshair !important; }
 .viewport.tool-bucket { cursor: crosshair; }
 /* 悬停预览：填充目标高亮内部区域，描边目标高亮轮廓，颜色即当前色槽 */
 .viewport.tool-bucket .canvas-element[data-bucket-target="fill"] {

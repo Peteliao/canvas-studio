@@ -152,7 +152,7 @@ export interface SnapPoint { x: number; y: number; kind: SnapPointKind; label: s
 
 export type Interaction =
     | { kind: 'pan'; lastX: number; lastY: number }
-    | { kind: 'drag'; startX: number; startY: number; items: DragItem[]; startBox?: AABB | null }
+    | { kind: 'drag'; startX: number; startY: number; items: DragItem[]; startBox?: AABB | null; anchor?: SnapPoint }
     | { kind: 'resize'; dir: string; startX: number; startY: number; box: AABB; items: ResizeItem[] }
     | { kind: 'rotate'; box: AABB; center: Point; single: boolean; startAngle: number; items: RotateItem[] }
     | { kind: 'pivot'; id: string; w: number; h: number; x: number; y: number; fx: number; fy: number; rotation: number }
