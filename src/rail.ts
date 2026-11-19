@@ -2,14 +2,17 @@
 import { SHAPE_MENU_BASIC, TYPE_LABELS, VECTOR_SHAPE_TYPES } from './constants';
 import type { ElementType, ToolName } from './types';
 import { $opt, elementIconEl, iconEl } from './utils';
+import { EFFECT_PRESETS, effectThumbEl, insertEffectPreset } from './effects';
 
 let shapeBtn: HTMLButtonElement | null = null;
 let lineBtn: HTMLButtonElement | null = null;
+let effectBtn: HTMLButtonElement | null = null;
 let shapeIcon: HTMLElement | null = null;
 let lineIcon: HTMLElement | null = null;
 let lineLabel: HTMLElement | null = null;
 let shapeMenu: HTMLElement | null = null;
 let lineMenu: HTMLElement | null = null;
+let effectMenu: HTMLElement | null = null;
 
 function setGlyph(slot: HTMLElement | null, node: SVGElement): void {
     if (!slot) return;
@@ -29,8 +32,8 @@ function setLineGlyph(name: 'arrow' | 'line' | 'pen'): void {
 }
 
 function closeMenus(): void {
-    [shapeMenu, lineMenu].forEach(m => { if (m) m.hidden = true; });
-    [shapeBtn, lineBtn].forEach(b => {
+    [shapeMenu, lineMenu, effectMenu].forEach(m => { if (m) m.hidden = true; });
+    [shapeBtn, lineBtn, effectBtn].forEach(b => {
         if (!b) return;
         b.classList.remove('menu-open');
         b.setAttribute('aria-expanded', 'false');
@@ -93,6 +96,24 @@ function buildShapeMenu(host: HTMLElement): void {
     host.style.gridTemplateColumns = 'repeat(4, 60px)';
 }
 
+function buildEffectMenu(host: HTMLElement): void {
+    EFFECT_PRESETS.forEach(p => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'rail-menu-item';
+        b.dataset.effect = p.key;
+        b.setAttribute('role', 'menuitem');
+        b.title = p.label + '：' + p.desc + '（插入后选中点色板即可换色）';
+        b.appendChild(effectThumbEl(p));
+        const span = document.createElement('span');
+        span.textContent = p.label;
+        b.appendChild(span);
+        b.addEventListener('click', () => { closeMenus(); insertEffectPreset(p); });
+        host.appendChild(b);
+    });
+    host.style.gridTemplateColumns = 'repeat(4, 62px)';
+}
+
 function buildLineMenu(host: HTMLElement): void {
     const items: { act: string; arg: 'arrow' | 'line' | 'pen'; label: string; hint: string }[] = [
         { act: 'addShape', arg: 'arrow', label: '箭头', hint: '' },
@@ -117,28 +138,33 @@ export function closeRailMenus(): void { closeMenus(); }
 export function initRail(): void {
     shapeBtn = $opt<HTMLButtonElement>('railShapeBtn');
     lineBtn = $opt<HTMLButtonElement>('railLineBtn');
+    effectBtn = $opt<HTMLButtonElement>('railEffectBtn');
     shapeIcon = $opt('railShapeIcon');
     lineIcon = $opt('railLineIcon');
     lineLabel = $opt('railLineLabel');
     shapeMenu = $opt('railShapeMenu');
     lineMenu = $opt('railLineMenu');
-    if (!shapeBtn || !lineBtn || !shapeMenu || !lineMenu) return;
+    effectMenu = $opt('railEffectMenu');
+    if (!shapeBtn || !lineBtn || !effectBtn || !shapeMenu || !lineMenu || !effectMenu) return;
     buildShapeMenu(shapeMenu);
     buildLineMenu(lineMenu);
+    buildEffectMenu(effectMenu);
     setGlyph(shapeIcon, iconEl('square'));
     setGlyph(lineIcon, iconEl('line'));
 
     shapeBtn.addEventListener('click', e => { e.stopPropagation(); openMenu(shapeMenu, shapeBtn); });
     lineBtn.addEventListener('click', e => { e.stopPropagation(); openMenu(lineMenu, lineBtn); });
+    effectBtn.addEventListener('click', e => { e.stopPropagation(); openMenu(effectMenu, effectBtn); });
 
     document.addEventListener('click', e => {
         const t = e.target as Node;
-        if (shapeMenu!.contains(t) || lineMenu!.contains(t) || shapeBtn!.contains(t) || lineBtn!.contains(t)) return;
+        if (shapeMenu!.contains(t) || lineMenu!.contains(t) || effectMenu!.contains(t) ||
+            shapeBtn!.contains(t) || lineBtn!.contains(t) || effectBtn!.contains(t)) return;
         closeMenus();
     });
     document.addEventListener('keydown', e => {
         if (e.key !== 'Escape') return;
-        if (!shapeMenu!.hidden || !lineMenu!.hidden) { closeMenus(); e.stopPropagation(); }
+        if (!shapeMenu!.hidden || !lineMenu!.hidden || !effectMenu!.hidden) { closeMenus(); e.stopPropagation(); }
     }, true);
     document.addEventListener('scroll', closeMenus, true);
     window.addEventListener('resize', closeMenus);

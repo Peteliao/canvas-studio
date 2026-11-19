@@ -3,6 +3,7 @@ import type { ShapePreset, TextPreset } from './constants';
 import { state } from './state';
 import { $, clamp, elementIconEl, finite, round2, toast } from './utils';
 import { buildElement, makeFill, makeLine, makeShadow, makeStroke, makeText, selectedEls } from './model';
+import { applyEffectTint } from './style';
 import { renderAll, syncElement } from './render';
 import { commit, scheduleCommit } from './history';
 import { canvasCenterFor } from './view';
@@ -155,10 +156,19 @@ export function applySwatch(color: string): void {
     }
     els.forEach(e => {
         if (e.type === 'line' || e.type === 'curve') e.line!.color = color;
-        else { e.fill.enabled = true; e.fill.color = color; if (e.type === 'text') e.text!.runs.forEach(r => { r.color = ''; }); }
+        else {
+            e.fill.enabled = true;
+            if (!applyEffectTint(e, color)) e.fill.color = color;
+            if (e.type === 'text') e.text!.runs.forEach(r => { r.color = ''; });
+        }
         syncElement(e.id);
     });
     $<HTMLInputElement>('elColorInput').value = color; $<HTMLInputElement>('elColorHex').value = color.toUpperCase();
+    const solo = els.length === 1 ? els[0] : null;
+    if (solo && solo.fill.mode !== 'solid') {
+        $<HTMLInputElement>('elGradStart').value = solo.fill.start;
+        $<HTMLInputElement>('elGradEnd').value = solo.fill.end;
+    }
     scheduleCommit();
     toast('已应用到 ' + els.length + ' 个元素', 'success');
 }

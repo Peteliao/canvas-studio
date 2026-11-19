@@ -1,11 +1,11 @@
 /* 内置自检 */
-import { VERSION, DB_NAME, HEX_RE, SHADOW_PRESETS, POLYGON_POINTS, CLIP_PATHS, VECTOR_SHAPE_PRESETS } from './constants';
+import { VERSION, DB_NAME, HEX_RE, SHADOW_PRESETS, POLYGON_POINTS, CLIP_PATHS, VECTOR_SHAPE_PRESETS, TYPES } from './constants';
 import type { CanvasElement, AABB, ElementType } from './types';
 import { state } from './state';
 import { $, iconEl } from './utils';
 import { validateProject, snapshotJSON, makeFill, makeLine, makeStroke, makeShadow, makeText, buildElement, validateElement,
     curvePathD, curveFillOn, curveStrokeOn, validateGuide, curveSegPts, splitCubic, cubicAt, sortedElements } from './model';
-import { fillToCSS, shapeFilter, lineHeightFor, wavyDashSpec, wavyDataURI, strokeOverlayMarkup } from './style';
+import { applyEffectTint, fillToCSS, shapeFilter, lineHeightFor, wavyDashSpec, wavyDataURI, strokeOverlayMarkup } from './style';
 import { buildSVG, buildPDF } from './vector-export';
 import { SHAPE_PARAM_SPECS, shapePoints, shapeClipPath, sanitizeShapeParams } from './shapes';
 import { getAABB, setPivot } from './geometry';
@@ -17,6 +17,7 @@ import type { GapMeasure, AlignMeasure } from './measure';
 import { boxGuideMeasure } from './guides';
 import { setSelection } from './selection';
 import { dbAvailable } from './db';
+import { EFFECT_PRESETS } from './effects';
 
 export function runSelfTest(): void {
     const results: { name: string; ok: boolean; detail: string }[] = [];
@@ -166,6 +167,34 @@ export function runSelfTest(): void {
         const svg = buildSVG({ bounds: { x: 0, y: 0, w: heart.w, h: heart.h }, elements: [heart], transparent: true });
         assert(svg.includes('<polygon'), 'SVG 导出缺少多边形');
         return VECTOR_SHAPE_PRESETS.length + ' 种矢量形状 · 渲染/导出可用';
+    });
+    check('透明特效图案库', () => {
+        assert(EFFECT_PRESETS.length >= 6, '特效预设数量不足');
+        const keys = new Set<string>();
+        EFFECT_PRESETS.forEach(p => {
+            assert(!keys.has(p.key), '预设 key 重复: ' + p.key);
+            keys.add(p.key);
+            assert(TYPES.includes(p.type), p.key + ' 类型未注册');
+            assert(p.alpha > 0 && p.alpha < 1, p.key + ' 应带透明度');
+            assert(HEX_RE.test(p.color) && p.light > 0 && p.light < 1, p.key + ' 颜色/高光参数异常');
+        });
+        const blob = buildElement('blob', 0, 0);
+        const basePts = shapePoints(blob);
+        assert(basePts && basePts.length > 30, '流体基础轮廓点数不足');
+        blob.shapeParams = { lobes: 7, depth: 32 };
+        const dyn = shapePoints(blob);
+        assert(dyn && dyn.length > 30 && JSON.stringify(dyn) !== JSON.stringify(basePts), '流体参数未改变轮廓');
+        const el = buildElement('drop', 0, 0);
+        el.effectTint = 0.6;
+        el.fill = makeFill({ mode: 'radial', color: '#3366ff', start: '#cce6ff', end: '#0033aa', alpha: 0.8 });
+        assert(applyEffectTint(el, '#ff0000'), '特效换色未命中');
+        assert(el.fill.start !== '#cce6ff' && el.fill.end !== '#0033aa', '渐变高光/暗部未重算');
+        assert(el.fill.alpha === 0.8 && el.fill.mode === 'radial', '换色不应改变透明度/模式');
+        const round = validateElement(JSON.parse(JSON.stringify(el)));
+        assert(round.effectTint === 0.6, '特效标记存档往返丢失');
+        const svg = buildSVG({ bounds: { x: 0, y: 0, w: el.w, h: el.h }, elements: [el], transparent: true });
+        assert(svg.includes('radialGradient') && svg.includes('polygon'), 'SVG 导出缺少透明渐变多边形');
+        return EFFECT_PRESETS.length + ' 个预设 · 换色保留渐变与透明度';
     });
     check('形状参数（16 种）', () => {
         const types: ElementType[] = ['rect', 'circle', 'triangle', 'star', 'hexagon', 'pentagon', 'diamond', 'trapezoid',

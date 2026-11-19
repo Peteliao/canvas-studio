@@ -1,7 +1,7 @@
 import { state } from './state';
 import { $, clamp, finite } from './utils';
 import { makeFill, makeLine, selectedEls } from './model';
-import { fillToCSS, lineHeightFor } from './style';
+import { applyEffectTint, fillToCSS, lineHeightFor } from './style';
 import { syncElement } from './render';
 import { scheduleCommit } from './history';
 import { showOnly } from './panel';
@@ -79,7 +79,7 @@ export function updateElementColor(): void {
             e.line!.color = v;
         } else {
             e.fill.enabled = true;
-            e.fill.color = v;
+            if (!applyEffectTint(e, v)) e.fill.color = v;
         }
         syncElement(e.id);
     });

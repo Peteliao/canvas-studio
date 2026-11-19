@@ -1,5 +1,6 @@
 /* 形状特征参数：所有渲染/导出/布尔运算共用的动态点位生成 */
 import { POLYGON_POINTS } from './constants';
+import { blobPoints, splashPoints, wavePoints } from './fluid';
 import type { CanvasElement, ElementType } from './types';
 import { clamp, round2 } from './utils';
 
@@ -33,7 +34,10 @@ export const SHAPE_PARAM_SPECS: Partial<Record<ElementType, ShapeParamSpec[]>> =
     cloud: [p('puff', '蓬松度', 50, 160, 1, 100, '%')],
     moon: [p('thickness', '月牙厚度', 50, 150, 1, 100, '%')],
     speech: [p('tail', '尾巴位置', 10, 90, 1, 43, '%'), p('tailSize', '尾巴长度', 40, 160, 1, 100, '%')],
-    drop: [p('tip', '上尖长度', 40, 160, 1, 100, '%')]
+    drop: [p('tip', '上尖长度', 40, 160, 1, 100, '%')],
+    blob: [p('lobes', '波瓣数', 3, 9, 1, 5, '个'), p('depth', '起伏', 5, 40, 1, 24, '%')],
+    wave: [p('amp', '波幅', 0, 40, 1, 14, '%'), p('thick', '带宽', 10, 80, 1, 44, '%')],
+    splash: [p('spikes', '尖角数', 3, 12, 1, 7, '个'), p('depth', '飞溅强度', 5, 35, 1, 24, '%')]
 };
 
 export function shapeParamSpecs(type: ElementType): ShapeParamSpec[] | null {
@@ -108,6 +112,15 @@ export function shapePoints(el: CanvasElement): [number, number][] | null {
     }
     if (!base) return null;
 
+    if (t === 'blob' && (has(el, 'lobes') || has(el, 'depth'))) {
+        return blobPoints(num(el, 'lobes', 5), num(el, 'depth', 24));
+    }
+    if (t === 'wave' && (has(el, 'amp') || has(el, 'thick'))) {
+        return wavePoints(num(el, 'amp', 14), num(el, 'thick', 44));
+    }
+    if (t === 'splash' && (has(el, 'spikes') || has(el, 'depth'))) {
+        return splashPoints(num(el, 'spikes', 7), num(el, 'depth', 24));
+    }
     if (t === 'triangle' && has(el, 'apex')) {
         const x = clamp(num(el, 'apex', 50), 0, 100);
         return [[x, 0], [0, 100], [100, 100]];

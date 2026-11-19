@@ -4,6 +4,31 @@ import { shapePoints } from './shapes';
 import type { CanvasElement, Fill, LineSpec } from './types';
 import { clamp, finite, round2 } from './utils';
 
+/** 两色按比例混合（t=0 取 a，t=1 取 b），用于透明特效的高光/暗部派生 */
+export function mixHex(a: string, b: string, t: number): string {
+    if (!HEX_RE.test(a) || !HEX_RE.test(b)) return a;
+    const x = parseInt(a.slice(1), 16), y = parseInt(b.slice(1), 16);
+    const f = (sh: number): number => {
+        const ca = (x >> sh) & 255, cb = (y >> sh) & 255;
+        return Math.round(ca + (cb - ca) * clamp(t, 0, 1));
+    };
+    return '#' + ((f(16) << 16) | (f(8) << 8) | f(0)).toString(16).padStart(6, '0');
+}
+export function effectTintColors(base: string, light: number): { start: string; end: string } {
+    return { start: mixHex(base, '#ffffff', light), end: mixHex(base, '#000000', 0.1) };
+}
+/** 透明特效元素换色：以主色重算渐变高光/暗部，保留模式与透明度 */
+export function applyEffectTint(el: CanvasElement, base: string): boolean {
+    if (typeof el.effectTint !== 'number' || !HEX_RE.test(base)) return false;
+    el.fill.enabled = true;
+    el.fill.color = base;
+    if (el.fill.mode !== 'solid') {
+        const c = effectTintColors(base, el.effectTint);
+        el.fill.start = c.start;
+        el.fill.end = c.end;
+    }
+    return true;
+}
 export function hexToRgba(hex: string, alpha: number): string {
     if (!HEX_RE.test(hex)) return hex;
     if (alpha >= 1) return hex;

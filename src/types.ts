@@ -2,7 +2,7 @@
 
 export type ElementType = 'rect' | 'circle' | 'triangle' | 'star' | 'arrow' | 'line' | 'curve' | 'text' | 'image' | 'boolean'
     | 'hexagon' | 'pentagon' | 'diamond' | 'trapezoid' | 'parallelogram' | 'cross'
-    | 'semicircle' | 'heart' | 'cloud' | 'moon' | 'speech' | 'drop';
+    | 'semicircle' | 'heart' | 'cloud' | 'moon' | 'speech' | 'drop' | 'blob' | 'wave' | 'splash';
 export type FillMode = 'solid' | 'linear' | 'radial' | 'conic';
 export type LineStyle = 'solid' | 'dashed' | 'dotted' | 'wavy';
 export type StrokeStyle = 'solid' | 'dashed' | 'dotted';
@@ -91,6 +91,8 @@ export interface CanvasElement {
     stroke: Stroke;
     shadow: Shadow;
     blendMode: BlendMode;
+    /** 透明特效标记：高光混白比例（0–1），换色时据此重算渐变；null = 普通元素 */
+    effectTint: number | null;
 }
 
 export interface Guide { id: string; angle: number; x: number; y: number; }

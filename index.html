@@ -285,8 +285,14 @@
             <span class="rail-icon-slot" id="railLineIcon" aria-hidden="true"></span><span id="railLineLabel">线条</span>
           </button>
         </div>
+        <div class="rail-menu-wrap" id="railEffectGroup">
+          <button class="rail-btn has-menu" id="railEffectBtn" type="button" aria-haspopup="menu" aria-expanded="false" title="透明特效：水珠、流体、波浪、水花、气泡等海报装饰（点击展开）">
+            <span class="rail-icon-slot" aria-hidden="true"><svg class="ic"><use href="#i-sparkle"/></svg></span><span>特效</span>
+          </button>
+        </div>
         <div class="rail-menu rail-menu-shapes" id="railShapeMenu" role="menu" aria-label="形状库" hidden></div>
         <div class="rail-menu rail-menu-lines" id="railLineMenu" role="menu" aria-label="线条工具" hidden></div>
+        <div class="rail-menu rail-menu-effects" id="railEffectMenu" role="menu" aria-label="透明特效图案" hidden></div>
         <button class="rail-btn" id="railBucket" data-act="setTool" data-arg="bucket" title="颜料桶 (B)：点内部改填充、点边缘改描边；按住拖动连续上色，Shift 强制描边，Alt+点击吸色"><svg class="ic"><use href="#i-bucket"/></svg><span>填色</span></button>
         <div class="rail-color-card" id="bucketColorCard">
           <button class="rail-color-slot active" id="bucketFillSlot" title="填充：点此打开设置" aria-label="填充设置">

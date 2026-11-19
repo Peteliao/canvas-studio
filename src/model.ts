@@ -235,7 +235,9 @@ export function validateElement(raw: unknown): CanvasElement {
         groupId: typeof r.groupId === 'string' && /^[A-Za-z0-9_]{1,120}$/.test(r.groupId) ? r.groupId : null,
         stroke: makeStroke(r.stroke),
         shadow: makeShadow(r.shadow),
-        blendMode: enumOf(BLEND_MODES, r.blendMode, 'normal')
+        blendMode: enumOf(BLEND_MODES, r.blendMode, 'normal'),
+        effectTint: typeof r.effectTint === 'number' && Number.isFinite(r.effectTint)
+            ? clamp(round2(r.effectTint), 0, 1) : null
     };
     return el;
 }
@@ -348,7 +350,8 @@ export function buildElement(type: ElementType, x: number, y: number): CanvasEle
         locked: false, exportVisible: true, opacity: 1, borderRadius: 0,
         shapeParams: {},
         fill: makeFill({ mode: 'solid', color: '#cccccc' }),
-        text: null, line: null, image: null, maskAssetId: null
+        text: null, line: null, image: null, maskAssetId: null,
+        effectTint: null
     };
     if (type === 'circle') { base.w = 150; base.h = 150; }
     if (type === 'triangle' || type === 'star') { base.w = 150; base.h = 150; }

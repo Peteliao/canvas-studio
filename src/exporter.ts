@@ -188,8 +188,11 @@ async function drawElementContent(c: CanvasRenderingContext2D, el: CanvasElement
             c.drawImage(img, 0, 0, el.w, el.h);
         } catch (err) { console.warn('图片渲染失败', (err as Error).message); }
     } else {
+        c.save();
+        c.globalAlpha = clamp(c.globalAlpha * finite(el.fill.alpha, 1), 0, 1);
         paintFill(c, el.fill, el.w, el.h);
         c.fillRect(0, 0, el.w, el.h);
+        c.restore();
     }
     c.restore();
 }
