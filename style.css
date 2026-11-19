@@ -491,6 +491,7 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 
 /* 曲线：路径 + 节点 + 控制柄 + 切线 */
 .curve-svg, .stroke-overlay { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.align-boundary { position: absolute; left: -2px; top: -2px; width: calc(100% + 4px); height: calc(100% + 4px); overflow: visible; pointer-events: none; }
 .curve-svg path { pointer-events: visiblePainted; cursor: default; }
 .stroke-overlay * { pointer-events: stroke; cursor: default; }
 .curve-guides { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; display: none; z-index: 9998; }

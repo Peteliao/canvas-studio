@@ -144,6 +144,18 @@ export function strokeOverlayMarkup(el: CanvasElement, w: number, h: number): st
     const clip = align === 'inside' ? ` clip-path="url(#stc_${el.id})"` : ` mask="url(#stm_${el.id})"`;
     return `<defs>${defs}</defs><g${clip}>${shape('none', ' ' + strokeAttrs + ' stroke-linejoin="round"')}</g>`;
 }
+/** 悬停试穿时的几何边界：白底 + 蓝色虚线，判断描边落在轮廓内 / 中 / 外 */
+export function boundaryMarkup(el: CanvasElement, w: number, h: number): string {
+    const pts = shapePoints(el);
+    const draw = (stroke: string, width: number, dash = ''): string => {
+        const extra = ` fill="none" stroke="${stroke}" stroke-width="${width}"${dash}`;
+        if (pts) return `<polygon points="${pts.map(([x, y]) => `${round2(x * w / 100)},${round2(y * h / 100)}`).join(' ')}"${extra}/>`;
+        if (el.type === 'circle') return `<ellipse cx="${round2(w / 2)}" cy="${round2(h / 2)}" rx="${round2(w / 2)}" ry="${round2(h / 2)}"${extra}/>`;
+        const rx = Math.min(el.borderRadius, w / 2, h / 2);
+        return `<rect x="0" y="0" width="${w}" height="${h}" rx="${round2(rx)}"${extra}/>`;
+    };
+    return draw('#ffffff', 3) + draw('#4f6bff', 1.6, ' stroke-dasharray="5 4"');
+}
 export function wavyGeom(line: LineSpec): { amp: number; period: number } {
     const amp = line.width * 0.5 + line.wavyAmp * 1.5;
     const period = Math.max(line.width * 2 + 10, 45 - line.wavyAmp * 1.5);
