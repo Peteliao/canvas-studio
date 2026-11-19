@@ -87,6 +87,7 @@ export interface CanvasElement {
     type: ElementType;
     x: number; y: number; w: number; h: number;
     rotation: number;
+    skewX: number; skewY: number;
     pivotX: number; pivotY: number;
     zIndex: number;
     locked: boolean;
@@ -103,6 +104,8 @@ export interface CanvasElement {
     name: string;
     visible: boolean;
     groupId: string | null;
+    /** 关联副本组：同组物件的填充、描边、粗细与尺寸保持同步；null = 未关联 */
+    linkId: string | null;
     stroke: Stroke;
     shadow: Shadow;
     blendMode: BlendMode;
@@ -151,15 +154,17 @@ export interface Settings {
 export interface DragItem { id: string; x: number; y: number; }
 export interface ResizeItem { id: string; x: number; y: number; w: number; h: number; }
 export interface RotateItem extends ResizeItem { rotation: number; pivotX: number; pivotY: number; }
+export interface SkewItem extends ResizeItem { rotation: number; pivotX: number; pivotY: number; skewX: number; skewY: number; }
 export interface SnapLine { vertical: boolean; at: number; }
 export type SnapPointKind = 'endpoint' | 'center' | 'golden' | 'quadrant' | 'midpoint' | 'node' | 'canvas';
 export interface SnapPoint { x: number; y: number; kind: SnapPointKind; label: string; elementId?: string; }
 
 export type Interaction =
     | { kind: 'pan'; lastX: number; lastY: number }
-    | { kind: 'drag'; startX: number; startY: number; items: DragItem[]; startBox?: AABB | null; anchor?: SnapPoint; pendingNodeClick?: { id: string; i: number } }
+    | { kind: 'drag'; startX: number; startY: number; items: DragItem[]; startBox?: AABB | null; anchor?: SnapPoint; pendingNodeClick?: { id: string; i: number }; secondClick?: boolean }
     | { kind: 'resize'; dir: string; startX: number; startY: number; box: AABB; items: ResizeItem[] }
     | { kind: 'rotate'; box: AABB; center: Point; single: boolean; startAngle: number; items: RotateItem[] }
+    | { kind: 'skew'; dir: 'n' | 's' | 'e' | 'w'; startX: number; startY: number; box: AABB; items: SkewItem[] }
     | { kind: 'pivot'; id: string; w: number; h: number; x: number; y: number; fx: number; fy: number; rotation: number }
     | { kind: 'box'; start: Point; current: Point; additive: boolean; subtractive: boolean; initial: string[] }
     | { kind: 'textcreate'; start: Point; current: Point }
@@ -212,6 +217,8 @@ export interface AppState {
     hiddenAssetsDirty: Set<string>;
     tool: ToolName;
     bucketSlot: BucketSlot;
+    /** 二次点击选中物件后的旋转 / 倾斜变换模式 */
+    transformMode: boolean;
     nodeSel: { id: string; i: number } | null;
     pen: PenDraft | null;
     settings: Settings;

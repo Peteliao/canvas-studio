@@ -12,6 +12,7 @@ import { refreshStudioUI } from './tools';
 import { syncStyleControls, defaultStrokeStops } from './swatches';
 import { syncPaintStrokeWidth } from './railstroke';
 import { syncShapeParamPanel } from './shapepanel';
+import { syncLinkTools } from './linked';
 
 export function showOnly(mode: FillMode): void {
     $('bgSolidControls').style.display = mode === 'solid' ? 'flex' : 'none';
@@ -232,6 +233,15 @@ export function updateUI(): void {
     $('distributeTools').style.display = n >= 3 ? 'flex' : 'none';
     $('booleanTools').style.display = n > 1 ? 'flex' : 'none';
     $('groupTools').style.display = n > 0 ? 'flex' : 'none';
+    $('linkTools').style.display = n > 0 ? 'flex' : 'none';
+    const groupBtn = $('btnGroupSelected');
+    groupBtn.classList.toggle('unavailable', n < 2);
+    groupBtn.title = n < 2 ? '至少选中两个物件后可组合（Ctrl+G）' : '组合后点击任一成员会同时选中整组（Ctrl+G）';
+    const hasGroup = selectedEls().some(e => !!e.groupId);
+    const ungroupBtn = $('btnUngroup');
+    ungroupBtn.classList.toggle('unavailable', !hasGroup);
+    ungroupBtn.title = hasGroup ? '解组所选组合（Ctrl+Shift+G）' : '所选物件不在任何组合中';
+    syncLinkTools();
     $('selCountBadge').textContent = String(n);
     refreshStudioUI();
     syncPaintStrokeWidth();

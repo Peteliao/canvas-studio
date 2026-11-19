@@ -4,7 +4,7 @@ import { $, round2, dialogCancel, isDialogOpen } from './utils';
 import { selectedEls } from './model';
 import { undo, redo, scheduleCommit } from './history';
 import { fitToScreen } from './view';
-import { setSelection, deselectAll } from './selection';
+import { setSelection, deselectAll, setTransformMode } from './selection';
 import { duplicateSelected, deleteSelected, addShape, moveSelected } from './elements';
 import { exportConfig } from './project';
 import { groupSelected, ungroupSelected, expandGroupIds } from './layerlist';
@@ -171,6 +171,7 @@ export function bindHotkeys(): void {
             else if (state.isolating) exitIsolation();
             else if (state.layerPick) endRelLayer();
             else if (state.interaction && state.interaction.kind === 'crop') state.interaction = null;
+            else if (state.transformMode) setTransformMode(false);
             else deselectAll();
         }
     });

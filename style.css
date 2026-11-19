@@ -175,6 +175,9 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 .text-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 5px 9px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text-2); font-size: 11px; white-space: nowrap; transition: all var(--transition); }
 .text-btn:hover { background: var(--bg-hover); color: var(--primary); border-color: var(--primary-ring); }
 .text-btn .ic { width: 13px; height: 13px; }
+.text-btn.unavailable { opacity: .5; }
+.text-btn.unavailable:hover { border-color: var(--warn); color: var(--warn); opacity: .8; }
+.text-btn.active { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
 .text-btn.danger-text { color: var(--danger); border-color: var(--danger); }
 .contextbar input[type="number"], .num-mini { width: 58px; padding: 5px 4px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-surface-2); text-align: center; font-size: 11px; outline: none; }
 .contextbar input[type="number"]:focus, .num-mini:focus { border-color: var(--primary); background: var(--bg-surface); }
@@ -373,6 +376,10 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 .lock-badge { position: absolute; top: -9px; right: -9px; width: 18px; height: 18px; display: none; align-items: center; justify-content: center; background: var(--bg-surface); color: var(--danger); border-radius: 50%; box-shadow: var(--shadow-md); z-index: 10001; }
 .lock-badge .ic { width: 11px; height: 11px; stroke-width: 2.4; }
 .canvas-element[data-locked="true"] .lock-badge { display: flex; }
+/* 关联副本徽标：同组样式 / 尺寸联动的可见反馈 */
+.link-badge { position: absolute; right: -9px; bottom: -9px; width: 18px; height: 18px; display: none; align-items: center; justify-content: center; background: var(--primary-soft); color: var(--primary); border: 1px solid var(--primary); border-radius: 50%; box-shadow: var(--shadow-sm); z-index: 10001; pointer-events: none; }
+.link-badge .ic { width: 10px; height: 10px; stroke-width: 2.4; }
+.canvas-element.linked .link-badge { display: flex; }
 .canvas-element[data-export-visible="false"] { opacity: .5 !important; outline: 1px dashed var(--text-3); }
 .canvas-element[data-visible="false"] { display: none; }
 
@@ -393,6 +400,28 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 .rotator { width: 11px; height: 11px; background: var(--bg-surface); border: 1.5px solid var(--primary); position: absolute; top: -27px; left: calc(50% - 5.5px); cursor: crosshair; display: none; z-index: 10000; border-radius: 50%; box-shadow: var(--shadow-sm); }
 .rotator-line { width: 1px; height: 16px; background: var(--primary); position: absolute; top: -16px; left: calc(50% - .5px); display: none; z-index: 9999; }
 .canvas-element.active .rotator, .canvas-element.active .rotator-line { display: block; }
+
+/* 二次点击进入旋转 / 倾斜模式：角点显示旋转符号，边中点变为倾斜手柄 */
+.canvas-element.transform-mode .rotator,
+.canvas-element.transform-mode .rotator-line { display: none !important; }
+.canvas-element.transform-mode .resizer { background: var(--primary-soft); border-color: var(--primary); border-radius: 3px; }
+.canvas-element.transform-mode .resizer-nw,
+.canvas-element.transform-mode .resizer-ne,
+.canvas-element.transform-mode .resizer-sw,
+.canvas-element.transform-mode .resizer-se { cursor: grab; }
+.canvas-element.transform-mode .resizer-n,
+.canvas-element.transform-mode .resizer-s,
+.canvas-element.transform-mode .resizer-e,
+.canvas-element.transform-mode .resizer-w { border-color: var(--warn); background: var(--bg-surface); }
+.canvas-element.transform-mode .resizer-nw::after,
+.canvas-element.transform-mode .resizer-ne::after,
+.canvas-element.transform-mode .resizer-sw::after,
+.canvas-element.transform-mode .resizer-se::after { content: '↻'; position: absolute; width: 14px; height: 14px; display: grid; place-items: center; font-size: 12px; line-height: 1; font-weight: 700; color: var(--primary); background: var(--bg-surface); border: 1px solid var(--primary); border-radius: 50%; box-shadow: var(--shadow-sm); pointer-events: none; }
+.canvas-element.transform-mode .resizer-nw::after { top: -17px; left: -17px; }
+.canvas-element.transform-mode .resizer-ne::after { top: -17px; right: -17px; }
+.canvas-element.transform-mode .resizer-sw::after { bottom: -17px; left: -17px; }
+.canvas-element.transform-mode .resizer-se::after { bottom: -17px; right: -17px; }
+.canvas-element.active.solo.transform-mode .pivot-handle { display: grid; }
 #selectionBox { position: absolute; border: 1px solid var(--primary); background: var(--primary-ring); pointer-events: none; z-index: 99999; display: none; border-radius: 2px; }
 
 /* 选中物件浮动工具条：隔离 / 样式刷 */

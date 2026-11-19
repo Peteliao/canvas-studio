@@ -7,6 +7,7 @@ import { dbAvailable, idbPut, idbAll } from './db';
 import { renderAll, syncCanvasSize } from './render';
 import { syncBackgroundControls, updateUI } from './panel';
 import { queueProjectSave } from './projects';
+import { resetLinkSnapshots, syncLinkedOnCommit } from './linked';
 
 let undoStack: string[] = [];
 let historyIndex = -1;
@@ -34,6 +35,8 @@ export function scheduleCommit(delay?: number): void {
 export function commit(): void {
     clearTimeout(commitTimer);
     if (isApplyingHistory) return;
+    // 关联副本：先按上次签名把变化成员的样式 / 尺寸传播给同组，再生成历史
+    syncLinkedOnCommit();
     normalizeZ();
     const json = snapshotJSON();
     // 编辑中的防抖提交只自动保存，避免每次击键都产生一条撤销记录
@@ -69,6 +72,7 @@ export function applySnapshot(json: string): boolean {
     if (parsed.assets) Object.assign(state.assets, parsed.assets);
     state.selection = [];
     if (commitTimer) clearTimeout(commitTimer);
+    resetLinkSnapshots();
     renderAll();
     syncCanvasSize();
     syncBackgroundControls();
@@ -103,6 +107,7 @@ export async function loadAuto(): Promise<boolean> {
         state.model = { version: VERSION, name: parsed.name || state.projectName || '未命名设计', canvas: parsed.canvas, elements: parsed.elements, guides: parsed.guides || [] };
         undoStack = [snapshotJSON()];
         historyIndex = 0;
+        resetLinkSnapshots();
         return true;
     } catch (e) {
         console.warn('自动保存数据不可用：', (e as Error).message);
@@ -114,6 +119,7 @@ export async function loadAuto(): Promise<boolean> {
 export function resetHistory(): void {
     undoStack = [snapshotJSON()];
     historyIndex = 0;
+    resetLinkSnapshots();
 }
 /** 新建/切换项目、恢复版本后重置历史栈并立即自动保存 */
 export function resetHistoryWithSave(): void {

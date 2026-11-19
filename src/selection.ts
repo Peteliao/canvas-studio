@@ -1,6 +1,6 @@
 /* 选择 */
 import { state } from './state';
-import { $, setIcon } from './utils';
+import { $, setIcon, toast } from './utils';
 import { getEl, selectedEls } from './model';
 import { lineHeightFor } from './style';
 import { selectionAABB } from './geometry';
@@ -11,6 +11,13 @@ import { finishTextEdit } from './richtext';
 import { endRelLayer } from './layers';
 import { expandGroupIds } from './layerlist';
 import { syncBucketFromSelection } from './bucket';
+import { syncSelectionTools } from './selectiontools';
+
+function groupUnitIds(id: string): string[] {
+    const el = getEl(id);
+    if (!el || !el.groupId) return [id];
+    return state.model.elements.filter(e => e.groupId === el.groupId).map(e => e.id);
+}
 
 function refreshGeoRatio(): void {
     if (!state.geoRatioLocked) return;
@@ -26,6 +33,7 @@ function refreshGeoRatio(): void {
 export function setSelection(ids: string[]): void {
     const valid = ids.filter(id => !!getEl(id));
     state.selection = expandGroupIds(valid);
+    state.transformMode = false;
     refreshGeoRatio();
     applySelectionClasses();
     updateUI();
@@ -35,6 +43,7 @@ export function deselectAll(): void {
     if (state.isTextEditing) finishTextEdit();
     state.selection = [];
     state.guideSel = null;
+    state.transformMode = false;
     applySelectionClasses();
     state.geoRatioLocked = false;
     updateGeoLockButton();
@@ -42,17 +51,32 @@ export function deselectAll(): void {
     updateUI();
 }
 export function toggleSelection(id: string, additive: boolean): void {
+    const unit = groupUnitIds(id);
     if (additive) {
-        const i = state.selection.indexOf(id);
-        if (i >= 0) state.selection.splice(i, 1); else state.selection.push(id);
+        const allSelected = unit.every(x => state.selection.includes(x));
+        if (allSelected) {
+            const drop = new Set(unit);
+            state.selection = state.selection.filter(x => !drop.has(x));
+        } else {
+            unit.forEach(x => { if (!state.selection.includes(x)) state.selection.push(x); });
+        }
     } else {
-        if (state.selection.length > 1 && state.selection.includes(id)) return;
-        state.selection = [id];
+        state.selection = unit.slice();
     }
+    state.transformMode = false;
     refreshGeoRatio();
     applySelectionClasses();
     updateUI();
     syncBucketFromSelection();
+}
+/** 二次点击选中物件：进入 / 退出旋转与倾斜变换模式 */
+export function setTransformMode(on: boolean): void {
+    const next = on && state.selection.length > 0 && state.tool === 'select';
+    if (state.transformMode === next) return;
+    state.transformMode = next;
+    applySelectionClasses();
+    syncSelectionTools();
+    if (next) toast('变换模式：拖角点旋转，拖上下边中点左右倾斜，拖左右边中点上下倾斜；点击空白退出', 'success');
 }
 export function updateGeoLockButton(): void {
     const btn = $('btnGeoLock');

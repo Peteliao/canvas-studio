@@ -63,7 +63,10 @@ export function buildSVG(opts: SVGExportOpts): string {
         const h = el.type === 'line' ? lineHeightFor(el) : el.h;
         const tx = el.x - b.x, ty = el.y - b.y;
         const px = el.pivotX * el.w, py = el.pivotY * h;
-        const transform = `translate(${tx + px} ${ty + py}) rotate(${el.rotation}) translate(${-px} ${-py})`;
+        const kx = Math.tan((el.skewX || 0) * Math.PI / 180);
+        const ky = Math.tan((el.skewY || 0) * Math.PI / 180);
+        const skew = (kx || ky) ? ` skewX(${el.skewX}) skewY(${el.skewY})` : '';
+        const transform = `translate(${tx + px} ${ty + py}) rotate(${el.rotation})${skew} translate(${-px} ${-py})`;
         const opacity = ` opacity="${el.opacity}"`;
         const blend = el.blendMode && el.blendMode !== 'normal' ? ` style="mix-blend-mode:${el.blendMode}"` : '';
         const shadow = el.shadow && el.shadow.enabled

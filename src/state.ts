@@ -25,6 +25,7 @@ export const state: AppState = {
     hiddenAssetsDirty: new Set(),
     tool: 'select',
     bucketSlot: 'fill',
+    transformMode: false,
     nodeSel: null,
     pen: null,
     settings: loadSettings(),

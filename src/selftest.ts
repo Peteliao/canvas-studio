@@ -10,14 +10,15 @@ import { elementSnapPoints, nearestSnapPoint, nearestPointSnap } from './snappoi
 import { applyEffectTint, fillToCSS, shapeFilter, lineHeightFor, wavyDashSpec, wavyDataURI, strokeOverlayMarkup } from './style';
 import { buildSVG, buildPDF } from './vector-export';
 import { SHAPE_PARAM_SPECS, shapePoints, shapeClipPath, sanitizeShapeParams } from './shapes';
-import { getAABB, setPivot } from './geometry';
-import { textMeasureCtx, canvasTextWidth, applyAutoSize } from './render';
+import { getAABB, setPivot, elementLocalToWorld, elementWorldToLocal } from './geometry';
+import { textMeasureCtx, canvasTextWidth, applyAutoSize, renderAll } from './render';
 import { layoutText, exportBoundsFor, textStrokeLayers } from './exporter';
 import { bucketColor, elementSlotColor, applyBucketColor } from './bucket';
 import { neighborGapsFor, alignmentMeasures, drawMeasure } from './measure';
 import type { GapMeasure, AlignMeasure } from './measure';
 import { boxGuideMeasure } from './guides';
-import { setSelection } from './selection';
+import { setSelection, toggleSelection } from './selection';
+import { linkCompatibility, linkSelected, unlinkSelected, syncLinkedOnCommit, resetLinkSnapshots } from './linked';
 import { dbAvailable } from './db';
 import { EFFECT_PRESETS } from './effects';
 import { applyStyleToElement, styleOptionEnabled, canConvertShape, convertElementShape } from './selectiontools';
@@ -278,6 +279,26 @@ export function runSelfTest(): void {
         assert(Math.abs(before.cx - after.cx) < 0.51 && Math.abs(before.cy - after.cy) < 0.51, '改变枢轴后图形位置漂移');
         return '切换枢轴图形保持不动';
     });
+    check('旋转 + 倾斜几何', () => {
+        const el = buildElement('rect', 120, 80);
+        el.w = 160; el.h = 90;
+        el.rotation = 25; el.skewX = 30; el.skewY = -12;
+        el.pivotX = 0.3; el.pivotY = 0.7;
+        [[0, 0], [160, 0], [160, 90], [0, 90], [73, 41]].forEach(([lx, ly]) => {
+            const w = elementLocalToWorld(el, lx, ly);
+            const back = elementWorldToLocal(el, w);
+            assert(Math.abs(back.x - lx) < 1e-6 && Math.abs(back.y - ly) < 1e-6, '局部/世界坐标往返偏差');
+        });
+        const box = getAABB(el);
+        assert(box.w > el.w && box.h > el.h, '倾斜旋转后 AABB 未扩张');
+        const before = getAABB(el);
+        setPivot(el, 0.1, 0.2, true);
+        const after = getAABB(el);
+        assert(Math.abs(before.cx - after.cx) < 0.6 && Math.abs(before.cy - after.cy) < 0.6, '倾斜后切换枢轴图形漂移');
+        const v = validateElement(Object.assign(buildElement('rect', 0, 0), { skewX: 200, skewY: -200 }));
+        assert(v.skewX === 85 && v.skewY === -85, '倾斜角未限幅');
+        return '坐标往返 · AABB 扩张 · 枢轴保形 · ±85° 限幅';
+    });
     check('虚线描边渲染', () => {
         const el = buildElement('rect', 0, 0);
         el.stroke = makeStroke({ width: 3, style: 'dashed', color: '#000000' });
@@ -506,6 +527,80 @@ export function runSelfTest(): void {
         const bad = state.model.elements.filter(e => !e.name || e.visible === undefined || e.stroke === undefined).length;
         assert(bad === 0, bad + ' 个元素元数据缺失');
         return '字段完整';
+    });
+    check('组合选择（同组联动）', () => {
+        const prevElements = state.model.elements, prevSelection = state.selection.slice();
+        const g1 = buildElement('rect', 0, 0), g2 = buildElement('circle', 100, 0), solo = buildElement('rect', 200, 0);
+        g1.groupId = 'grp_selftest'; g2.groupId = 'grp_selftest';
+        try {
+            state.model.elements = [g1, g2, solo];
+            renderAll();
+            setSelection([g1.id]);
+            assert(state.selection.length === 2 && state.selection.includes(g2.id), '点击组内成员未选中整组');
+            assert(!state.selection.includes(solo.id), '不应选中组外元素');
+            setSelection([solo.id]);
+            toggleSelection(g2.id, true);
+            assert(state.selection.length === 3 && state.selection.includes(g1.id), 'Ctrl 追加组内成员未保留整组');
+            toggleSelection(g1.id, true);
+            assert(state.selection.length === 1 && state.selection.includes(solo.id), 'Ctrl 取消组内成员未整组移除');
+            return '单击成员同选整组 · 追加/取消按整组';
+        } finally {
+            state.model.elements = prevElements;
+            renderAll();
+            setSelection(prevSelection);
+        }
+    });
+    check('关联副本同步与断开', () => {
+        const prevElements = state.model.elements, prevSelection = state.selection.slice();
+        const a = buildElement('rect', 10, 20), b = buildElement('rect', 200, 40);
+        a.w = 120; b.w = 160;
+        try {
+            state.model.elements = [a, b];
+            renderAll();
+            setSelection([a.id, b.id]);
+            linkSelected();
+            assert(!!a.linkId && a.linkId === b.linkId, '未建立相同 linkId');
+            a.fill.color = '#ff3300';
+            a.stroke = makeStroke({ width: 7, color: '#22cc88' });
+            a.w = 180; a.borderRadius = 16;
+            assert(syncLinkedOnCommit(), '提交时未传播关联属性');
+            assert(b.fill.color === '#ff3300' && b.stroke!.width === 7 && b.w === 180 && b.borderRadius === 16, '关联属性未同步');
+            assert(b.x === 200 && b.y === 40, '关联同步不应移动副本');
+            b.stroke!.width = 3;
+            syncLinkedOnCommit();
+            assert(a.stroke!.width === 3, '副本修改未回传');
+            const c = buildElement('circle', 400, 0);
+            state.model.elements.push(c);
+            renderAll();
+            setSelection([a.id, c.id]);
+            const compat = linkCompatibility();
+            assert(!compat.ok && compat.reason.includes('矩形') && compat.reason.includes('圆形'), '异类关联未拒绝');
+            const lid = a.linkId;
+            linkSelected();
+            assert(a.linkId === lid && !c.linkId, '异类关联不应改写 linkId');
+            setSelection([a.id, b.id]);
+            unlinkSelected();
+            assert(!a.linkId && !b.linkId, '断开后仍残留 linkId');
+            const t1 = buildElement('text', 0, 0), t2 = buildElement('text', 260, 0);
+            t1.text = makeText({ fontSize: 24, runs: [{ text: '甲一' }, { text: '甲二' }] });
+            t2.text = makeText({ fontSize: 18, runs: [{ text: '乙一' }, { text: '乙二' }] });
+            state.model.elements = [t1, t2];
+            renderAll();
+            setSelection([t1.id, t2.id]);
+            linkSelected();
+            t1.text!.fontSize = 33;
+            t1.text!.runs[0].color = '#ff00ff';
+            t1.text!.runs[1].bold = true;
+            syncLinkedOnCommit();
+            assert(t2.text!.fontSize === 33 && t2.text!.runs[0].color === '#ff00ff' && t2.text!.runs[1].bold, '文本样式未同步');
+            assert(t2.text!.runs[0].text === '乙一' && t2.text!.runs[1].text === '乙二', '关联同步不应覆盖文字内容');
+            return '样式/尺寸双向同步 · 文本样式同步 · 异类拒绝 · 断开清除';
+        } finally {
+            state.model.elements = prevElements;
+            resetLinkSnapshots();
+            renderAll();
+            setSelection(prevSelection);
+        }
     });
     check('标注数值可编辑', () => {
         const el = state.model.elements.find(e => !e.locked);

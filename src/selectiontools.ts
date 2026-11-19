@@ -406,6 +406,25 @@ function viewportRightLimit(vw: number): number {
     return clamp(ir.left - vr.left - 12, 140, vw - 6);
 }
 
+interface ScreenRect { l: number; t: number; r: number; b: number; }
+
+function measureTagRects(): ScreenRect[] {
+    const vr = $('viewport').getBoundingClientRect();
+    const out: ScreenRect[] = [];
+    document.querySelectorAll<HTMLElement>('#measureLayer .measure-tag').forEach(n => {
+        const r = n.getBoundingClientRect();
+        if (r.width < 1 || r.height < 1) return;
+        out.push({ l: r.left - vr.left, t: r.top - vr.top, r: r.right - vr.left, b: r.bottom - vr.top });
+    });
+    return out;
+}
+
+function overlapArea(a: ScreenRect, b: ScreenRect): number {
+    const w = Math.min(a.r, b.r) - Math.max(a.l, b.l);
+    const h = Math.min(a.b, b.b) - Math.max(a.t, b.t);
+    return w > 0 && h > 0 ? w * h : 0;
+}
+
 export function syncSelectionTools(): void {
     const tools = $opt('selectionTools');
     if (!tools) return;
@@ -485,12 +504,34 @@ export function syncSelectionTools(): void {
     const screenBottom = state.pan.y + box.bottom * zoom;
     const limit = viewportRightLimit(vw);
     const maxX = Math.max(6, Math.min(vw - w - 6, limit - w));
-    let x = clamp(screenRight - w, 6, maxX);
-    let y = screenTop - h - 9;
-    if (y < 6) y = screenBottom + 9;
-    y = clamp(y, 6, Math.max(6, vh - h - 6));
-    tools.style.left = x + 'px';
-    tools.style.top = y + 'px';
+    // 候选位置：物件上方 / 下方 / 左右两侧；优先贴近右上，但以不遮挡尺寸数值为准
+    const above = screenTop - h - 9, below = screenBottom + 9;
+    const midY = clamp((screenTop + screenBottom) / 2 - h / 2, 6, Math.max(6, vh - h - 6));
+    const raw: Array<{ x: number; y: number }> = [
+        { x: screenRight - w, y: above },
+        { x: state.pan.x + box.left * zoom, y: above },
+        { x: (screenRight + state.pan.x + box.left * zoom) / 2 - w / 2, y: above },
+        { x: screenRight - w, y: below },
+        { x: state.pan.x + box.left * zoom, y: below },
+        { x: (screenRight + state.pan.x + box.left * zoom) / 2 - w / 2, y: below },
+        { x: screenRight + 9, y: midY },
+        { x: state.pan.x + box.left * zoom - w - 9, y: midY }
+    ];
+    const obstacles = measureTagRects();
+    let bestX = clamp(raw[0].x, 6, maxX);
+    let bestY = clamp(raw[0].y, 6, Math.max(6, vh - h - 6));
+    let bestScore = Infinity;
+    raw.forEach((pos, i) => {
+        const x = clamp(pos.x, 6, maxX);
+        const y = clamp(pos.y, 6, Math.max(6, vh - h - 6));
+        const rect: ScreenRect = { l: x, t: y, r: x + w, b: y + h };
+        const covered = obstacles.reduce((sum, o) => sum + overlapArea(rect, o), 0);
+        // 同等无遮挡时保留候选顺序；有遮挡时取覆盖面积最小
+        const score = covered * 1000 + i;
+        if (score < bestScore) { bestScore = score; bestX = x; bestY = y; }
+    });
+    tools.style.left = bestX + 'px';
+    tools.style.top = bestY + 'px';
 }
 
 let toolsBound = false;

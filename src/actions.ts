@@ -5,7 +5,8 @@ import { state } from './state';
 import { $, $opt, clamp, finite, toast, dialogOk, dialogCancel, downloadBlob } from './utils';
 import { sortedElements } from './model';
 import { getAABB } from './geometry';
-import { undo, redo } from './history';
+import { undo, redo, commit } from './history';
+import { linkSelected, unlinkSelected } from './linked';
 import { adjustZoom, resetView, fitToScreen } from './view';
 import { setSelection, toggleSelectionLock, toggleCanvasLock } from './selection';
 import { alignElements, distributeElements, layerAction, startRelLayer } from './layers';
@@ -28,7 +29,7 @@ import { runSelfTest } from './selftest';
 import { eyedropper, addSwatch, applyHexInput, useColor, applyStyleChange, applyFillAlpha, applyShadowPolar, applyShadowXY, applyShadowPreset, applyStrokePaintMode, applyStrokeGradientGeometry, setStrokeAlign } from './swatches';
 import { setLineStyle, setWavyDash, curveOp, clientToWorld } from './interaction';
 import { updateElementColor, updateCanvasBg, toggleElBgMode, updateElementBackground, updateElementOpacity, updateElementRadius, updateLineStyle, toggleBgMode } from './styles';
-import { updateCurveFill, updateCurveStroke } from './panel';
+import { updateCurveFill, updateCurveStroke, updateUI } from './panel';
 import { openBucketPicker, hideBucketHover, bucketEditsSelection, commitBucketPicker, previewBucketPicker, bindPaintPopoverControls, setBucketColor, bucketSlotLabel } from './bucket';
 import { addImage, handleImageUpload } from './image';
 import { saveSettings } from './db';
@@ -100,6 +101,8 @@ export const ACTIONS: Record<string, ActionFn> = {
     setTool: arg => setTool(arg as ToolName),
     groupSelected: () => groupSelected(),
     ungroupSelected: () => ungroupSelected(),
+    linkSelected: () => { linkSelected(); updateUI(); commit(); },
+    unlinkSelected: () => { unlinkSelected(); updateUI(); commit(); },
     collapseAllGroups: () => collapseAllGroups(),
     renameSelected: () => { void renameSelected(); },
     selectAll: () => setSelection(expandGroupIds(state.model.elements.map(e => e.id))),

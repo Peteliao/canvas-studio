@@ -255,8 +255,13 @@
     </div>
 
     <div class="tool-group" id="groupTools" style="display:none;">
-      <button class="text-btn" data-act="groupSelected" title="组合 (Ctrl+G)"><svg class="ic"><use href="#i-group"/></svg> 组合</button>
+      <button class="text-btn" id="btnGroupSelected" data-act="groupSelected" title="组合 (Ctrl+G)"><svg class="ic"><use href="#i-group"/></svg> 组合</button>
       <button class="text-btn" data-act="ungroupSelected" id="btnUngroup" title="解组 (Ctrl+Shift+G)"><svg class="ic"><use href="#i-ungroup"/></svg> 解组</button>
+    </div>
+
+    <div class="tool-group" id="linkTools" style="display:none;">
+      <button class="text-btn" id="btnLinkSelected" data-act="linkSelected" title="关联副本：选中两个以上同类型物件后建立属性同步"><svg class="ic"><use href="#i-link"/></svg> 关联副本</button>
+      <button class="text-btn" id="btnUnlinkSelected" data-act="unlinkSelected" title="断开所选物件的关联同步"><svg class="ic"><use href="#i-unlink"/></svg> 断开关联</button>
     </div>
 
     <div class="contextbar-spacer"></div>

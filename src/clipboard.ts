@@ -50,7 +50,8 @@ export async function pasteFromClipboardSystem(): Promise<void> {
     const clones = src.map(e => {
         const c = validateElement(deepCopy(e));
         c.id = uid('el'); c.x = round2(c.x + 20); c.y = round2(c.y + 20);
-        c.zIndex = nextZIndex(); c.locked = false; return c;
+        c.zIndex = nextZIndex(); c.locked = false;
+        c.groupId = null; c.linkId = null; return c;
     });
     state.model.elements.push(...clones);
     renderAll(); setSelection(clones.map(c => c.id)); commit();

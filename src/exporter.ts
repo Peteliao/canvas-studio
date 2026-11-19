@@ -268,6 +268,9 @@ export async function drawExportElement(ctx: CanvasRenderingContext2D, el: Canva
     }
     ctx.translate((el.x - (originX || 0)) + el.pivotX * el.w, (el.y - (originY || 0)) + el.pivotY * h);
     ctx.rotate(el.rotation * Math.PI / 180);
+    const kx = Math.tan(clamp(finite(el.skewX, 0), -85, 85) * Math.PI / 180);
+    const ky = Math.tan(clamp(finite(el.skewY, 0), -85, 85) * Math.PI / 180);
+    if (kx || ky) ctx.transform(1, ky, kx, 1, 0, 0);
     ctx.translate(-el.pivotX * el.w, -el.pivotY * h);
 
     if (el.maskAssetId && state.assets[el.maskAssetId]) {

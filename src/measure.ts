@@ -539,6 +539,8 @@ export function drawMeasure(): void {
         seeds.push({ l: rx - 9, r: rx + 9, t: ry - 9, b: ry + 9 });
     }
     layoutMeasureTags(pending, seeds);
+    // 标签完成避让后再校正浮动工具条，确保不压住刚生成的可编辑数值
+    requestAnimationFrame(syncSelectionTools);
 }
 
 setSelectionToolsMeasureRefresh(drawMeasure);
@@ -585,4 +587,5 @@ function drawGuideSelectionMeasure(layer: HTMLElement, g: Guide): void {
         });
     });
     layoutMeasureTags(pending, seeds);
+    requestAnimationFrame(syncSelectionTools);
 }

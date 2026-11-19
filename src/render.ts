@@ -64,6 +64,7 @@ export function buildNode(el: CanvasElement): HTMLDivElement {
     const rotLine = document.createElement('div'); rotLine.className = 'rotator-line'; d.appendChild(rotLine);
     const rot = document.createElement('div'); rot.className = 'rotator'; rot.title = '拖拽旋转（Shift 吸附 15°）；悬停显示旋转中心'; rot.setAttribute('role', 'button'); rot.setAttribute('aria-label', '拖拽旋转；悬停显示旋转中心'); d.appendChild(rot);
     const pivot = document.createElement('div'); pivot.className = 'pivot-handle'; pivot.title = '旋转中心：拖拽移动，双击复位'; pivot.setAttribute('role', 'button'); pivot.setAttribute('aria-label', '旋转中心：拖拽移动，双击复位'); d.appendChild(pivot);
+    const linkBadge = document.createElement('span'); linkBadge.className = 'link-badge'; linkBadge.title = '关联副本：样式与尺寸同步'; linkBadge.appendChild(iconEl('link')); d.appendChild(linkBadge);
     // 枢轴手柄默认隐藏，避免盖住内容/拦截双击；悬停旋转柄或旋转时才浮现
     // 指针离开后延迟收起，留出从旋转柄移向准星的操作时间；悬停期间保持可见
     const showPeek = (): void => { clearTimeout(d._peekTimer); if (!el.locked) d.classList.add('pivot-peek'); };
@@ -188,15 +189,18 @@ export function syncNode(el: CanvasElement, d: HTMLDivElement): void {
     s.top = el.y + 'px';
     s.width = el.w + 'px';
     s.height = renderH + 'px';
-    s.transform = `rotate(${el.rotation}deg)`;
+    s.transform = `rotate(${el.rotation}deg) skew(${el.skewX || 0}deg, ${el.skewY || 0}deg)`;
     s.transformOrigin = `${el.pivotX * 100}% ${el.pivotY * 100}%`;
     s.zIndex = String(el.zIndex);
     s.opacity = String(el.opacity);
     d.dataset.locked = String(el.locked);
     d.dataset.exportVisible = String(el.exportVisible);
     d.dataset.rotation = String(el.rotation);
+    d.dataset.skewX = String(el.skewX || 0);
+    d.dataset.skewY = String(el.skewY || 0);
     d.dataset.visible = String(el.visible);
     d.classList.toggle('group-member', !!el.groupId);
+    d.classList.toggle('linked', !!el.linkId);
     s.mixBlendMode = el.blendMode && el.blendMode !== 'normal' ? el.blendMode : '';
     s.display = el.visible ? '' : 'none';
 
@@ -429,6 +433,7 @@ export function applySelectionClasses(): void {
     nodeMap.forEach((d, id) => {
         d.classList.toggle('active', set.has(id));
         d.classList.toggle('solo', id === solo);
+        d.classList.toggle('transform-mode', state.transformMode && set.has(id));
     });
     syncNodeSel();
     // 选中状态变化后刷新曲线节点/控制柄的显示

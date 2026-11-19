@@ -8,8 +8,8 @@ import { lineHeightFor } from './style';
 import { syncElement, renderAll, applySelectionClasses, syncTransform } from './render';
 import { commit } from './history';
 import { viewportRect, setZoom, showFitFloat } from './view';
-import { getAABB, pivotWorld, selectionAABB, setPivot } from './geometry';
-import { setSelection, deselectAll, toggleSelection } from './selection';
+import { getAABB, pivotWorld, selectionAABB, setPivot, elementLocalToWorld, elementWorldToLocal } from './geometry';
+import { setSelection, deselectAll, toggleSelection, setTransformMode } from './selection';
 import { updateUI, updatePropPanel, syncCurveFillControls } from './panel';
 import { saveSettings } from './db';
 import { startTextEdit, finishTextEdit } from './richtext';
@@ -39,26 +39,20 @@ export function clientToWorld(clientX: number, clientY: number): Point {
         y: (clientY - vr.top - state.pan.y) / state.zoom
     };
 }
-/** 世界坐标 → 元素未旋转局部坐标（含自定义枢轴补偿） */
+/** 世界坐标 → 元素未旋转局部坐标（含自定义枢轴与倾斜补偿） */
 export function worldToLocalPoint(el: CanvasElement, world: Point): Point {
-    const h = el.type === 'line' ? lineHeightFor(el) : el.h;
-    const rad = el.rotation * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
-    const P = pivotWorld(el);
-    const dx = world.x - P.x, dy = world.y - P.y;
-    return { x: el.pivotX * el.w + dx * cos + dy * sin, y: el.pivotY * h - dx * sin + dy * cos };
+    return elementWorldToLocal(el, world);
 }
-/** 缩放手柄对应的世界坐标（角点或边中点，旋转与自定义枢轴均适用） */
+/** 缩放手柄对应的世界坐标（角点或边中点，旋转、倾斜与自定义枢轴均适用） */
 function resizerAnchorWorld(el: CanvasElement, dir: string): SnapPoint {
     const h = el.type === 'line' ? lineHeightFor(el) : el.h;
     const fx = dir.includes('w') ? 0 : dir.includes('e') ? 1 : 0.5;
     const fy = dir.includes('n') ? 0 : dir.includes('s') ? 1 : 0.5;
-    const rad = el.rotation * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
-    const p = pivotWorld(el);
-    const dx = fx * el.w - el.pivotX * el.w, dy = fy * h - el.pivotY * h;
     const corner = dir.length > 1;
+    const p = elementLocalToWorld(el, fx * el.w, fy * h);
     return {
-        x: p.x + dx * cos - dy * sin,
-        y: p.y + dx * sin + dy * cos,
+        x: p.x,
+        y: p.y,
         kind: corner ? 'endpoint' : 'midpoint',
         label: corner ? '角点' : '边中点',
         elementId: el.id
@@ -97,6 +91,48 @@ function resizeCursor(dir: string): string {
     if (dir === 'n' || dir === 's') return 'ns-resize';
     if (dir === 'e' || dir === 'w') return 'ew-resize';
     return dir === 'ne' || dir === 'sw' ? 'nesw-resize' : 'nwse-resize';
+}
+
+function startRotateInteraction(e: PointerEvent, el: CanvasElement): void {
+    if (!state.selection.includes(el.id)) setSelection([el.id]);
+    const box = selectionAABB();
+    if (!box) return;
+    const items = selectedEls().filter(x => !x.locked);
+    if (!items.length) return;
+    // 单选围绕自身枢轴旋转；多选围绕选区中心旋转
+    const center = items.length === 1 ? pivotWorld(items[0]) : { x: box.cx, y: box.cy };
+    items.forEach(x => {
+        const n = nodeMap.get(x.id);
+        if (n) { n.classList.add('pivot-peek'); clearTimeout(n._peekTimer); }
+    });
+    const vr = viewportRect();
+    state.interaction = {
+        kind: 'rotate', box, center, single: items.length === 1,
+        startAngle: Math.atan2(e.clientY - (vr.top + state.pan.y + center.y * state.zoom), e.clientX - (vr.left + state.pan.x + center.x * state.zoom)),
+        items: items.map(x => ({ id: x.id, x: x.x, y: x.y, w: x.w, h: x.h, rotation: x.rotation, pivotX: x.pivotX, pivotY: x.pivotY }))
+    };
+    markInteracting(state.selection);
+    setInteractionCursor('crosshair');
+    e.preventDefault();
+}
+
+function startSkewInteraction(e: PointerEvent, dir: 'n' | 's' | 'e' | 'w', el: CanvasElement): void {
+    if (!state.selection.includes(el.id)) setSelection([el.id]);
+    const box = selectionAABB();
+    if (!box) return;
+    const items = selectedEls().filter(x => !x.locked);
+    if (!items.length) return;
+    state.interaction = {
+        kind: 'skew', dir, startX: e.clientX, startY: e.clientY, box,
+        items: items.map(x => ({
+            id: x.id, x: x.x, y: x.y, w: x.w, h: x.h,
+            rotation: x.rotation, pivotX: x.pivotX, pivotY: x.pivotY,
+            skewX: x.skewX || 0, skewY: x.skewY || 0
+        }))
+    };
+    markInteracting(state.selection);
+    setInteractionCursor(dir === 'n' || dir === 's' ? 'ew-resize' : 'ns-resize');
+    e.preventDefault();
 }
 
 function updateAnchorHover(e: PointerEvent): void {
@@ -195,6 +231,12 @@ function showAngleTooltip(x: number, y: number, deg: number): void {
     t.style.left = (x + 15) + 'px'; t.style.top = (y + 15) + 'px';
     const norm = ((Math.round(deg) % 360) + 360) % 360;
     t.textContent = `∠ ${norm}°`;
+}
+function showSkewTooltip(x: number, y: number, axis: 'X' | 'Y', deg: number): void {
+    const t = $('sizeTooltip');
+    t.style.display = 'block';
+    t.style.left = (x + 15) + 'px'; t.style.top = (y + 15) + 'px';
+    t.textContent = `倾斜 ${axis} ${deg >= 0 ? '+' : ''}${Math.round(deg)}°`;
 }
 function hideSizeTooltip(): void { $('sizeTooltip').style.display = 'none'; }
 /** 旋转时在视口上绘制：枢轴→指针参考线 + 角度弧 + 度数标签（屏幕坐标） */
@@ -336,6 +378,7 @@ export function initCanvasInteraction(): void {
 
 function handleDoubleTap(el: CanvasElement): void {
     if (el.locked) return;
+    if (state.transformMode) setTransformMode(false);
     if (el.type === 'text') startTextEdit(el);
     else if (el.type === 'curve') {
         if (state.selection.length !== 1) setSelection([el.id]);
@@ -557,9 +600,17 @@ function onPointerDown(e: PointerEvent): void {
         const el = getEl(d.getAttribute('data-id') || '');
         if (!el || el.locked) return;
         if (!state.selection.includes(el.id)) setSelection([el.id]);
+        const dir = resizer.getAttribute('data-dir') || '';
+        // 变换模式：四角拖拽旋转，四边中点拖拽倾斜
+        if (state.transformMode && !(e.ctrlKey || e.metaKey)) {
+            if (dir.length === 2) { startRotateInteraction(e, el); return; }
+            if (dir === 'n' || dir === 's' || dir === 'e' || dir === 'w') {
+                startSkewInteraction(e, dir, el);
+                return;
+            }
+        }
         const box = selectionAABB();
         if (!box) return;
-        const dir = resizer.getAttribute('data-dir') || '';
         if (e.ctrlKey || e.metaKey) {
             if (startAnchorDrag(e, resizerAnchorWorld(el, dir))) return;
         }
@@ -574,22 +625,8 @@ function onPointerDown(e: PointerEvent): void {
     if (rotator && d) {
         const el = getEl(d.getAttribute('data-id') || '');
         if (!el || el.locked) return;
-        if (!state.selection.includes(el.id)) setSelection([el.id]);
-        const box = selectionAABB();
-        if (!box) return;
-        const items = selectedEls().filter(x => !x.locked);
-        // 单选围绕自身枢轴旋转；多选围绕选区中心旋转
-        const center = items.length === 1 ? pivotWorld(items[0]) : { x: box.cx, y: box.cy };
-        items.forEach(x => { const n = nodeMap.get(x.id); if (n) { n.classList.add('pivot-peek'); clearTimeout(n._peekTimer); } });
-        const vr = viewportRect();
-        state.interaction = {
-            kind: 'rotate', box, center, single: items.length === 1,
-            startAngle: Math.atan2(e.clientY - (vr.top + state.pan.y + center.y * state.zoom), e.clientX - (vr.left + state.pan.x + center.x * state.zoom)),
-            items: items.map(x => ({ id: x.id, x: x.x, y: x.y, w: x.w, h: x.h, rotation: x.rotation, pivotX: x.pivotX, pivotY: x.pivotY }))
-        };
-        markInteracting(state.selection);
-        setInteractionCursor('crosshair');
-        e.preventDefault(); return;
+        startRotateInteraction(e, el);
+        return;
     }
     if ((e.ctrlKey || e.metaKey) && d) {
         const el = getEl(d.getAttribute('data-id') || '');
@@ -603,11 +640,18 @@ function onPointerDown(e: PointerEvent): void {
         if (state.isTextEditing && state.editingId === id) return;
         if (state.isTextEditing) finishTextEdit();
         if (e.altKey && !state.selection.includes(id)) { e.preventDefault(); return; }
-        if (!e.altKey) toggleSelection(id, e.ctrlKey || e.metaKey);
+        let secondClick = false;
+        if (!e.altKey) {
+            const additive = e.ctrlKey || e.metaKey;
+            const wasSelected = state.selection.includes(id);
+            // 已选中的成员保持整组 / 多选不动，便于直接拖动；单击但不拖动才进入变换模式
+            if (additive || !wasSelected) toggleSelection(id, additive);
+            secondClick = !additive && wasSelected && e.detail < 2 && state.tool === 'select';
+        }
         const movable = selectedEls().filter(x => !x.locked);
         if (movable.length) {
             state.interaction = {
-                kind: 'drag', startX: e.clientX, startY: e.clientY, startBox: selectionAABB(),
+                kind: 'drag', startX: e.clientX, startY: e.clientY, startBox: selectionAABB(), secondClick,
                 items: movable.map(x => ({ id: x.id, x: x.x, y: x.y }))
             };
             markInteracting(state.selection);
@@ -823,6 +867,58 @@ function onPointerMove(e: PointerEvent | null): void {
         drawMeasure();
         return;
     }
+    if (it.kind === 'skew') {
+        const dx = (e.clientX - it.startX) / state.zoom;
+        const dy = (e.clientY - it.startY) / state.zoom;
+        if (it.dir === 'n' || it.dir === 's') {
+            if (it.items.length === 1) {
+                const o = it.items[0], el = getEl(o.id);
+                if (!el) return;
+                const rad = o.rotation * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+                const localDx = dx * cos + dy * sin;
+                const sign = it.dir === 'n' ? -1 : 1;
+                const angle = Math.atan2(sign * localDx, Math.max(1, o.h / 2)) * 180 / Math.PI;
+                el.skewX = round2(clamp(o.skewX + angle, -85, 85));
+                syncElement(el.id);
+                showSkewTooltip(e.clientX, e.clientY, 'X', el.skewX);
+            } else {
+                const k = (it.dir === 'n' ? 1 : -1) * dx / Math.max(1, it.box.h / 2);
+                const angle = -Math.atan2(k, 1) * 180 / Math.PI;
+                it.items.forEach(o => {
+                    const el = getEl(o.id); if (!el) return;
+                    const hh = el.type === 'line' ? lineHeightFor(el) : el.h;
+                    el.x = round2(o.x + k * (it.box.cy - (o.y + o.pivotY * hh)));
+                    el.skewX = round2(clamp(o.skewX + angle, -85, 85));
+                    syncElement(el.id);
+                });
+                showSkewTooltip(e.clientX, e.clientY, 'X', angle);
+            }
+        } else {
+            if (it.items.length === 1) {
+                const o = it.items[0], el = getEl(o.id);
+                if (!el) return;
+                const rad = o.rotation * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+                const localDy = -dx * sin + dy * cos;
+                const sign = it.dir === 'e' ? 1 : -1;
+                const angle = Math.atan2(sign * localDy, Math.max(1, o.w / 2)) * 180 / Math.PI;
+                el.skewY = round2(clamp(o.skewY + angle, -85, 85));
+                syncElement(el.id);
+                showSkewTooltip(e.clientX, e.clientY, 'Y', el.skewY);
+            } else {
+                const k = (it.dir === 'e' ? 1 : -1) * dy / Math.max(1, it.box.w / 2);
+                const angle = Math.atan2(k, 1) * 180 / Math.PI;
+                it.items.forEach(o => {
+                    const el = getEl(o.id); if (!el) return;
+                    el.y = round2(o.y + k * ((o.x + o.pivotX * o.w) - it.box.cx));
+                    el.skewY = round2(clamp(o.skewY + angle, -85, 85));
+                    syncElement(el.id);
+                });
+                showSkewTooltip(e.clientX, e.clientY, 'Y', angle);
+            }
+        }
+        drawMeasure();
+        return;
+    }
     if (it.kind === 'pivot') {
         const el = getEl(it.id); if (!el) return;
         const world = clientToWorld(e.clientX, e.clientY);
@@ -894,6 +990,10 @@ export function endInteraction(e?: PointerEvent): void {
         const p = it.pendingNodeClick;
         const el = getEl(p.id);
         if (el && el.type === 'curve') toggleCurveNodeType(el, p.i);
+    }
+    if (it.kind === 'drag' && it.secondClick && e?.type === 'pointerup'
+        && Math.hypot(e.clientX - it.startX, e.clientY - it.startY) < 4) {
+        setTransformMode(!state.transformMode);
     }
     if (it.kind === 'textcreate') {
         $('selectionBox').style.display = 'none';

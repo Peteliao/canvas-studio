@@ -276,6 +276,8 @@ export function validateElement(raw: unknown): CanvasElement {
         w: clamp(finite(r.w, 200), 1, MAX_CANVAS_SIDE),
         h: clamp(finite(r.h, 150), 1, MAX_CANVAS_SIDE),
         rotation: clamp(finite(r.rotation, 0), -36000, 36000),
+        skewX: clamp(finite(r.skewX, 0), -85, 85),
+        skewY: clamp(finite(r.skewY, 0), -85, 85),
         pivotX: clamp(finite(r.pivotX, 0.5), -2, 3),
         pivotY: clamp(finite(r.pivotY, 0.5), -2, 3),
         zIndex: clamp(finite(r.zIndex, 1), 0, 100000),
@@ -294,6 +296,7 @@ export function validateElement(raw: unknown): CanvasElement {
         name: typeof r.name === 'string' ? r.name.slice(0, 80) : (TYPE_LABELS[type] || '元素'),
         visible: r.visible !== false,
         groupId: typeof r.groupId === 'string' && /^[A-Za-z0-9_]{1,120}$/.test(r.groupId) ? r.groupId : null,
+        linkId: typeof r.linkId === 'string' && /^[A-Za-z0-9_]{1,120}$/.test(r.linkId) ? r.linkId : null,
         stroke: makeStroke(r.stroke),
         shadow: makeShadow(r.shadow),
         blendMode: enumOf(BLEND_MODES, r.blendMode, 'normal'),
@@ -407,7 +410,7 @@ export function snapshotJSON(): string {
 }
 export function buildElement(type: ElementType, x: number, y: number): CanvasElement {
     const base: Record<string, unknown> = {
-        id: uid('el'), type, x, y, w: 200, h: 150, rotation: 0, zIndex: nextZIndex(),
+        id: uid('el'), type, x, y, w: 200, h: 150, rotation: 0, skewX: 0, skewY: 0, zIndex: nextZIndex(),
         locked: false, exportVisible: true, opacity: 1, borderRadius: 0,
         shapeParams: {},
         fill: makeFill({ mode: 'solid', color: '#cccccc' }),

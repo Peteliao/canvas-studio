@@ -44,6 +44,8 @@ export function duplicateSelected(): void {
         const c = deepCopy(e);
         c.id = uid('el'); c.x = round2(c.x + 20); c.y = round2(c.y + 20);
         c.zIndex = nextZIndex(); c.locked = false;
+        // 副本默认脱离原组合与关联，是否建立属性同步由用户显式点击按钮决定
+        c.groupId = null; c.linkId = null;
         return validateElement(c);
     });
     state.model.elements.push(...clones);
@@ -62,6 +64,7 @@ export function pasteFromClipboard(): void {
         const c = validateElement(deepCopy(e));
         c.id = uid('el'); c.x = round2(c.x + 20); c.y = round2(c.y + 20);
         c.zIndex = nextZIndex(); c.locked = false;
+        c.groupId = null; c.linkId = null;
         return c;
     });
     state.model.elements.push(...clones);

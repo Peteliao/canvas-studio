@@ -18,6 +18,10 @@ export function setTool(name: ToolName): void {
     if (name !== 'pen' && state.pen) finishPen(false, true);
     if (name !== 'pen') renderPenDraft();
     state.tool = name;
+    if (name !== 'select' && state.transformMode) {
+        state.transformMode = false;
+        document.querySelectorAll('.canvas-element.transform-mode').forEach(n => n.classList.remove('transform-mode'));
+    }
     ['railSelect', 'railPan', 'railText', 'railLineGroup', 'railBucket'].forEach(id => { const n = $opt(id); if (n) n.classList.remove('active'); });
     const railId = name === 'pan' ? 'railPan' : name === 'text' ? 'railText' : name === 'pen' ? 'railLineGroup'
         : name === 'bucket' ? 'railBucket' : 'railSelect';
