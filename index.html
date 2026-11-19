@@ -445,8 +445,8 @@
                 </div>
               </div>
               <div id="elBgGradientControls" style="display:none;">
-                <div class="control-row"><span class="control-label">起点</span><input type="color" id="elGradStart" value="#ffffff" aria-label="渐变起点色"></div>
-                <div class="control-row"><span class="control-label">终点</span><input type="color" id="elGradEnd" value="#dddddd" aria-label="渐变终点色"></div>
+                <div class="section-label">渐变色标</div>
+                <div class="grad-editor" id="elGradEditor"></div>
                 <div class="control-row" id="elAngleRow">
                   <span class="control-label">角度</span>
                   <input type="range" id="elGradAngle" min="0" max="360" value="90" aria-label="渐变角度">
@@ -478,8 +478,8 @@
                   <span class="value-tag" id="curveFillHex">#CCCCCC</span>
                 </div>
                 <div id="curveFillGradControls" style="display:none;">
-                  <div class="control-row"><span class="control-label">起点</span><input type="color" id="curveFillGradStart" value="#ffffff" aria-label="曲线渐变起点色"></div>
-                  <div class="control-row"><span class="control-label">终点</span><input type="color" id="curveFillGradEnd" value="#dddddd" aria-label="曲线渐变终点色"></div>
+                  <div class="section-label">渐变色标</div>
+                  <div class="grad-editor" id="curveGradEditor"></div>
                   <div class="control-row"><span class="control-label">角度</span><input type="range" id="curveFillAngle" min="0" max="360" value="90" aria-label="曲线渐变角度"><span class="value-tag" id="curveFillAngleVal">90°</span></div>
                 </div>
                 <div class="control-row">
@@ -517,6 +517,31 @@
                   <input type="color" id="strokeColor" value="#1f2937" aria-label="描边颜色">
                   <input type="range" id="strokeWidth" min="0" max="30" value="0" aria-label="描边宽度">
                   <span class="value-tag" id="strokeWidthVal">0</span>
+                </div>
+                <div class="control-row">
+                  <span class="control-label">描边类型</span>
+                  <select id="strokePaintMode" aria-label="描边类型">
+                    <option value="solid">纯色</option>
+                    <option value="linear">线性渐变</option>
+                    <option value="radial">椭圆渐变</option>
+                    <option value="conic">圆锥渐变</option>
+                  </select>
+                </div>
+                <div id="strokeGradientControls" style="display:none;">
+                  <div class="section-label">描边渐变色标</div>
+                  <div class="grad-editor" id="strokeGradEditor"></div>
+                  <div class="control-row" id="strokeGradAngleRow">
+                    <span class="control-label">角度</span>
+                    <input type="range" id="strokeGradAngle" min="0" max="360" value="45" aria-label="描边渐变角度">
+                    <input type="number" id="strokeGradAngleNum" min="0" max="360" class="num-mini" value="45" aria-label="描边渐变角度数值">
+                  </div>
+                  <div class="control-row" id="strokeGradPosRow">
+                    <span class="control-label">中心</span>
+                    <input type="number" id="strokeGradPosX" min="0" max="100" class="num-mini" value="50" title="X %" aria-label="描边渐变中心 X">
+                    <span class="unit">%</span>
+                    <input type="number" id="strokeGradPosY" min="0" max="100" class="num-mini" value="50" title="Y %" aria-label="描边渐变中心 Y">
+                    <span class="unit">%</span>
+                  </div>
                 </div>
                 <div class="control-row">
                   <span class="control-label">描边样式</span>

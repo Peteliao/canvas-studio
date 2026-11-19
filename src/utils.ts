@@ -1,6 +1,6 @@
 /* 基础工具：DOM 查询、数值、对话框、文件与图片加载 */
 import { SVG_NS, HEX_RE, POLYGON_POINTS, TYPE_ICONS } from './constants';
-import type { ElementType } from './types';
+import type { ElementType, GradientStop } from './types';
 import { imageCache } from './state';
 
 export function $<T extends HTMLElement = HTMLElement>(id: string): T {
@@ -22,6 +22,22 @@ export const deepCopy = <T>(o: T): T => JSON.parse(JSON.stringify(o)) as T;
 export const round2 = (v: number): number => Math.round(v * 100) / 100;
 export const round3 = (v: number): number => Math.round(v * 1000) / 1000;
 export const validColor = (v: unknown, d: string): string => (typeof v === 'string' && HEX_RE.test(v) ? v : d);
+/** 渐变色标：最多 8 个，按位置排序；少于 2 个视为无效（调用方回退首尾色） */
+export function normalizeStops(raw: unknown): GradientStop[] | null {
+    if (!Array.isArray(raw)) return null;
+    const out: GradientStop[] = [];
+    raw.slice(0, 8).forEach(item => {
+        if (!item || typeof item !== 'object') return;
+        const o = item as Record<string, unknown>;
+        const color = validColor(o.color, '');
+        if (!color) return;
+        out.push({ color, pos: clamp(round2(finite(o.pos, 0)), 0, 100) });
+    });
+    if (out.length < 2) return null;
+    out.sort((a, b) => a.pos - b.pos);
+    return out;
+}
+export const cloneStops = (stops: GradientStop[]): GradientStop[] => stops.map(s => ({ color: s.color, pos: s.pos }));
 
 export function iconEl(name: string, cls?: string): SVGSVGElement {
     const svg = document.createElementNS(SVG_NS, 'svg');

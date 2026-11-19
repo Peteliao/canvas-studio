@@ -41,6 +41,31 @@ export function runSelfTest(): void {
         ['solid', 'linear', 'radial', 'conic'].forEach(m => assert(fillToCSS(makeFill({ mode: m })).length > 0, m + ' 生成失败'));
         return 'solid/linear/radial/conic';
     });
+    check('多色标渐变与描边渐变', () => {
+        const stops = [
+            { color: '#ff0000', pos: 0 }, { color: '#00ff00', pos: 30 },
+            { color: '#0000ff', pos: 70 }, { color: '#ffffff', pos: 100 }
+        ];
+        const f = makeFill({ mode: 'linear', stops });
+        assert(f.stops.length === 4 && f.start === '#ff0000' && f.end === '#ffffff', '多色标未保留或首尾未同步');
+        const css = fillToCSS(f);
+        assert(css.includes('30%') && css.includes('70%'), 'CSS 渐变缺少中间色标');
+        const round = validateElement(Object.assign(buildElement('rect', 0, 0), { fill: f }));
+        assert(round.fill.stops.length === 4, '存档往返丢失色标');
+        const el = buildElement('rect', 0, 0);
+        el.fill = f;
+        el.stroke = makeStroke({
+            width: 3, color: '#1f2937',
+            gradient: { mode: 'linear', angle: 45, posX: 50, posY: 50, stops: stops.slice(0, 3) }
+        });
+        const overlay = strokeOverlayMarkup(el, el.w, el.h);
+        assert(overlay.includes('<defs>') && overlay.includes('stroke="url(#stg_'), '画布描边未使用渐变');
+        assert((overlay.match(/<stop /g) || []).length === 3, '描边渐变色标数量异常');
+        const svg = buildSVG({ bounds: { x: 0, y: 0, w: el.w, h: el.h }, elements: [el], transparent: true });
+        assert(svg.includes('stroke="url(#s0)"') && svg.includes('id="s0"'), 'SVG 导出缺少渐变描边');
+        assert(applyBucketColor(el, 'stroke', '#123456') && el.stroke.gradient === null, '纯色描边应清除旧渐变');
+        return '4 色标填充 · 3 色标描边 · 存档/导出一致';
+    });
     check('线条四样式', () => {
         ['solid', 'dashed', 'dotted', 'wavy'].forEach(s => assert(lineHeightFor(makeSelfLine(s)) > 0, s + ' 高度异常'));
         ['dashed', 'dotted'].forEach(d => {

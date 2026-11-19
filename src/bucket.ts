@@ -342,8 +342,8 @@ export function applyBucketColor(el: CanvasElement | null, target: BucketSlot, c
         el.fill.color = color;
         el.text!.runs.forEach(r => { r.color = ''; });
     } else if (stroke) {
-        el.stroke = makeStroke(Object.assign({}, el.stroke, none ? { width: 0 } : {
-            color, width: Math.max(1, finite(el.stroke && el.stroke.width, 0))
+        el.stroke = makeStroke(Object.assign({}, el.stroke, none ? { width: 0, gradient: null } : {
+            color, gradient: null, width: Math.max(1, finite(el.stroke && el.stroke.width, 0))
         }));
     } else if (el.type === 'line' || (el.type === 'curve' && !(el.curve && el.curve.closed))) {
         if (none) return false;   // 开放路径只有描边

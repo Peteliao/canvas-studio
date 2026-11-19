@@ -595,6 +595,19 @@ select:focus { border-color: var(--primary); }
 .mini-btn.danger { color: var(--danger); }
 .shadow-presets { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
 .shadow-presets .mini-btn { flex: 1 1 auto; text-align: center; cursor: pointer; }
+/* 渐变色标编辑器：渐变条 + 可拖色标 + 颜色/位置输入 */
+.grad-editor { margin: 2px 0 10px; }
+.grad-bar { position: relative; height: 28px; border: 1px solid var(--border); border-radius: 6px; cursor: crosshair; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .08); }
+.grad-bar-stops { position: absolute; inset: 0; }
+.grad-stop { position: absolute; top: 50%; width: 13px; height: 13px; margin: -7px 0 0 -7px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, .38), 0 1px 3px rgba(0, 0, 0, .3); cursor: grab; }
+.grad-stop:active { cursor: grabbing; }
+.grad-stop.active { box-shadow: 0 0 0 2px var(--primary), 0 1px 4px rgba(0, 0, 0, .4); z-index: 1; }
+.grad-stop-controls { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.grad-color { width: 28px; height: 24px; padding: 0; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-surface-2); cursor: pointer; flex-shrink: 0; }
+.grad-color::-webkit-color-swatch-wrapper { padding: 2px; }
+.grad-color::-webkit-color-swatch { border: none; border-radius: 3px; }
+.grad-pos { width: 52px !important; }
+.grad-add { margin-left: auto; }
 .list-empty { padding: 16px 8px; text-align: center; font-size: 11px; color: var(--text-3); }
 
 /* ==================== 模态框 ==================== */

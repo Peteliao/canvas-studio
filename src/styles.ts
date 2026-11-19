@@ -1,5 +1,5 @@
 import { state } from './state';
-import { $, clamp, finite } from './utils';
+import { $, clamp, cloneStops, finite } from './utils';
 import { makeFill, makeLine, selectedEls } from './model';
 import { applyEffectTint, fillToCSS, lineHeightFor } from './style';
 import { syncElement } from './render';
@@ -9,7 +9,7 @@ import { currentLineStyle, currentWavyDash } from './interaction';
 import { applyInlineStyle } from './richtext';
 import { drawMeasure } from './measure';
 import { syncPaintStrokeWidth } from './railstroke';
-import type { FillMode } from './types';
+import type { FillMode, GradientStop } from './types';
 
 export function updateCanvasBg(source?: string): void {
     const c = state.model.canvas;
@@ -42,18 +42,37 @@ export function updateElementBackground(source?: string): void {
     const els = selectedEls().filter(e => !e.locked && e.type !== 'text' && e.type !== 'line' && e.type !== 'curve');
     if (source === 'slider') $<HTMLInputElement>('elGradAngleInput').value = $<HTMLInputElement>('elGradAngle').value;
     if (source === 'number') $<HTMLInputElement>('elGradAngle').value = $<HTMLInputElement>('elGradAngleInput').value;
-    const f = makeFill({
-        mode: $<HTMLSelectElement>('elBgType').value,
-        color: $<HTMLInputElement>('elColorInput').value,
-        start: $<HTMLInputElement>('elGradStart').value,
-        end: $<HTMLInputElement>('elGradEnd').value,
-        angle: $<HTMLInputElement>('elGradAngleInput').value,
-        posX: $<HTMLInputElement>('elGradPosX').value,
-        posY: $<HTMLInputElement>('elGradPosY').value,
-        alpha: els.length ? els[0].fill.alpha : 1
+    const mode = $<HTMLSelectElement>('elBgType').value as FillMode;
+    const angle = clamp(finite($<HTMLInputElement>('elGradAngleInput').value, 90), 0, 360);
+    const posX = clamp(finite($<HTMLInputElement>('elGradPosX').value, 50), 0, 100);
+    const posY = clamp(finite($<HTMLInputElement>('elGradPosY').value, 50), 0, 100);
+    els.forEach(e => {
+        e.fill.enabled = true;
+        e.fill.mode = mode;
+        e.fill.angle = angle;
+        e.fill.posX = posX;
+        e.fill.posY = posY;
+        if (!e.fill.stops || e.fill.stops.length < 2) {
+            e.fill.stops = [{ color: e.fill.start, pos: 0 }, { color: e.fill.end, pos: 100 }];
+        }
+        e.fill.start = e.fill.stops[0].color;
+        e.fill.end = e.fill.stops[e.fill.stops.length - 1].color;
+        syncElement(e.id);
     });
-    els.forEach(e => { e.fill = Object.assign({}, f); syncElement(e.id); });
     scheduleCommit();
+}
+/** 渐变色标编辑：写入全部选中普通形状，保留各自模式与透明度 */
+export function updateElementGradientStops(stops: GradientStop[]): void {
+    const els = selectedEls().filter(e => !e.locked && e.type !== 'text' && e.type !== 'line' && e.type !== 'curve');
+    if (!els.length || stops.length < 2) return;
+    els.forEach(e => {
+        e.fill.enabled = true;
+        e.fill.stops = cloneStops(stops);
+        e.fill.start = stops[0].color;
+        e.fill.end = stops[stops.length - 1].color;
+        syncElement(e.id);
+    });
+    scheduleCommit(120);
 }
 
 export function toggleElBgMode(): void {

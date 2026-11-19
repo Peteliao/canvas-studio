@@ -1,7 +1,7 @@
 /* 样式计算：填充 CSS、描边/投影滤镜、波浪线几何 */
 import { HEX_RE, SVG_NS, STROKE_SVG_TYPES } from './constants';
 import { shapePoints } from './shapes';
-import type { CanvasElement, Fill, LineSpec } from './types';
+import type { CanvasElement, Fill, FillMode, GradientStop, LineSpec, StrokeGradient } from './types';
 import { clamp, finite, round2 } from './utils';
 
 /** 两色按比例混合（t=0 取 a，t=1 取 b），用于透明特效的高光/暗部派生 */
@@ -26,6 +26,7 @@ export function applyEffectTint(el: CanvasElement, base: string): boolean {
         const c = effectTintColors(base, el.effectTint);
         el.fill.start = c.start;
         el.fill.end = c.end;
+        el.fill.stops = [{ color: c.start, pos: 0 }, { color: c.end, pos: 100 }];
     }
     return true;
 }
@@ -35,14 +36,58 @@ export function hexToRgba(hex: string, alpha: number): string {
     const n = parseInt(hex.slice(1), 16);
     return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
+/** 渐变全部色标；旧数据没有 stops 时回退首尾两色 */
+export function fillStops(f: Fill): GradientStop[] {
+    return f.stops && f.stops.length >= 2 ? f.stops : [{ color: f.start, pos: 0 }, { color: f.end, pos: 100 }];
+}
+function cssStopList(stops: GradientStop[], alpha: number): string {
+    return stops.map(s => `${hexToRgba(s.color, alpha)} ${round2(s.pos)}%`).join(', ');
+}
 export function fillToCSS(f: Fill): string {
     if (!f.enabled) return 'transparent';
     const a = clamp(finite(f.alpha, 1), 0, 1);
-    const s = hexToRgba(f.start, a), e = hexToRgba(f.end, a);
-    if (f.mode === 'linear') return `linear-gradient(${f.angle}deg, ${s}, ${e})`;
-    if (f.mode === 'radial') return `radial-gradient(ellipse at ${f.posX}% ${f.posY}%, ${s}, ${e})`;
-    if (f.mode === 'conic') return `conic-gradient(from ${f.angle}deg at ${f.posX}% ${f.posY}%, ${s}, ${e})`;
+    if (f.mode === 'linear') return `linear-gradient(${f.angle}deg, ${cssStopList(fillStops(f), a)})`;
+    if (f.mode === 'radial') return `radial-gradient(ellipse at ${f.posX}% ${f.posY}%, ${cssStopList(fillStops(f), a)})`;
+    if (f.mode === 'conic') return `conic-gradient(from ${f.angle}deg at ${f.posX}% ${f.posY}%, ${cssStopList(fillStops(f), a)})`;
     return hexToRgba(f.color, a);
+}
+/** 画布导出的渐变对象：与 fillToCSS 同一套角度/中心/色标 */
+export function canvasGradient(ctx: CanvasRenderingContext2D, mode: FillMode, angle: number, posX: number, posY: number,
+    stops: GradientStop[], alpha: number, w: number, h: number): CanvasGradient | null {
+    const a = clamp(finite(alpha, 1), 0, 1);
+    const add = (g: CanvasGradient): CanvasGradient => {
+        stops.forEach(s => g.addColorStop(clamp(s.pos, 0, 100) / 100, hexToRgba(s.color, a)));
+        return g;
+    };
+    if (mode === 'linear') {
+        const rad = angle * Math.PI / 180;
+        const cx = w / 2, cy = h / 2;
+        const len = (Math.abs(w * Math.sin(rad)) + Math.abs(h * Math.cos(rad))) / 2;
+        const dx = Math.sin(rad) * len, dy = -Math.cos(rad) * len;
+        return add(ctx.createLinearGradient(cx - dx, cy - dy, cx + dx, cy + dy));
+    }
+    if (mode === 'radial') {
+        const cx = w * posX / 100, cy = h * posY / 100;
+        return add(ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h) * 0.75));
+    }
+    if (mode === 'conic' && typeof ctx.createConicGradient === 'function') {
+        return add(ctx.createConicGradient(angle * Math.PI / 180, w * posX / 100, h * posY / 100));
+    }
+    return null;
+}
+/** SVG <defs> 渐变（圆锥渐变以对角线性渐变近似，与现有导出策略一致） */
+export function gradientDefMarkup(id: string, mode: FillMode, angle: number, posX: number, posY: number,
+    stops: GradientStop[], alpha = 1): string {
+    const list = stops.map(s => `<stop offset="${round2(clamp(s.pos, 0, 100))}%" stop-color="${hexToRgba(s.color, alpha)}"/>`).join('');
+    if (mode === 'linear') {
+        const rad = angle * Math.PI / 180, dx = Math.sin(rad) * 50, dy = -Math.cos(rad) * 50;
+        return `<linearGradient id="${id}" x1="${round2(50 - dx)}%" y1="${round2(50 - dy)}%" x2="${round2(50 + dx)}%" y2="${round2(50 + dy)}%">${list}</linearGradient>`;
+    }
+    if (mode === 'radial') return `<radialGradient id="${id}" cx="${round2(posX)}%" cy="${round2(posY)}%" r="75%">${list}</radialGradient>`;
+    return `<linearGradient id="${id}" x1="0%" y1="0%" x2="100%" y2="100%">${list}</linearGradient>`;
+}
+export function strokeDefMarkup(id: string, g: StrokeGradient): string {
+    return gradientDefMarkup(id, g.mode, g.angle, g.posX, g.posY, g.stops, 1);
 }
 /** 描边：常规形状用 SVG 轮廓叠加（支持虚线），boolean 用多重 drop-shadow 贴合遮罩；投影基于 alpha */
 export function shapeFilter(el: CanvasElement): string {
@@ -52,7 +97,9 @@ export function shapeFilter(el: CanvasElement): string {
         const w = Math.min(st.width, 12);
         const offsets: [number, number][] = [[w, 0], [-w, 0], [0, w], [0, -w]];
         if (w > 2) offsets.push([w * .7, w * .7], [-w * .7, w * .7], [w * .7, -w * .7], [-w * .7, -w * .7]);
-        offsets.forEach(([x, y]) => parts.push(`drop-shadow(${round2(x)}px ${round2(y)}px 0 ${st.color})`));
+        // 投影滤镜只能用纯色：渐变描边取中间色标近似（SVG 轮廓类型不受影响）
+        const paint = st.gradient ? st.gradient.stops[Math.floor(st.gradient.stops.length / 2)].color : st.color;
+        offsets.forEach(([x, y]) => parts.push(`drop-shadow(${round2(x)}px ${round2(y)}px 0 ${paint})`));
     }
     const sh = el.shadow;
     if (sh && sh.enabled) {
@@ -67,14 +114,20 @@ export function strokeOverlayMarkup(el: CanvasElement, w: number, h: number): st
     if (!st || st.width <= 0 || !STROKE_SVG_TYPES.includes(el.type)) return '';
     const dash = st.style === 'dashed' ? ` stroke-dasharray="${st.width * 3} ${st.width * 2}"`
         : st.style === 'dotted' ? ` stroke-dasharray="0.1 ${st.width * 1.8}" stroke-linecap="round"` : '';
-    const attrs = `fill="none" stroke="${st.color}" stroke-width="${st.width}"${dash}`;
+    let defs = '', paint = st.color;
+    if (st.gradient) {
+        const id = 'stg_' + el.id;
+        defs = `<defs>${strokeDefMarkup(id, st.gradient)}</defs>`;
+        paint = `url(#${id})`;
+    }
+    const attrs = `fill="none" stroke="${paint}" stroke-width="${st.width}"${dash}`;
     const pts = shapePoints(el);
     if (pts) {
-        return `<polygon points="${pts.map(([x, y]) => `${round2(x * w / 100)},${round2(y * h / 100)}`).join(' ')}" stroke-linejoin="round" ${attrs}/>`;
+        return defs + `<polygon points="${pts.map(([x, y]) => `${round2(x * w / 100)},${round2(y * h / 100)}`).join(' ')}" stroke-linejoin="round" ${attrs}/>`;
     }
-    if (el.type === 'circle') return `<ellipse cx="${w / 2}" cy="${h / 2}" rx="${w / 2}" ry="${h / 2}" ${attrs}/>`;
+    if (el.type === 'circle') return defs + `<ellipse cx="${w / 2}" cy="${h / 2}" rx="${w / 2}" ry="${h / 2}" ${attrs}/>`;
     const rx = Math.min(el.borderRadius, w / 2, h / 2);
-    return `<rect x="0" y="0" width="${w}" height="${h}" rx="${rx}" ${attrs}/>`;
+    return defs + `<rect x="0" y="0" width="${w}" height="${h}" rx="${rx}" ${attrs}/>`;
 }
 export function wavyGeom(line: LineSpec): { amp: number; period: number } {
     const amp = line.width * 0.5 + line.wavyAmp * 1.5;

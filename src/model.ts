@@ -5,30 +5,48 @@ import {
     VECTOR_SHAPE_TYPES, VECTOR_SHAPE_PRESETS
 } from './constants';
 import type {
-    Fill, Stroke, Shadow, TextStyle, TextRun, LineSpec, Curve, CurveNode, ImageRef,
+    Fill, Stroke, StrokeGradient, Shadow, TextStyle, TextRun, LineSpec, Curve, CurveNode, ImageRef,
     CanvasElement, Guide, Model, ElementType, StrokeStyle,
     TextSizeMode, CurveNodeType, FontWeight, Point, Box
 } from './types';
 import { state, nodeMap } from './state';
 import { sanitizeShapeParams } from './shapes';
 import { dbAvailable } from './db';
-import { clamp, finite, validColor, round2, round3, uid } from './utils';
+import { clamp, finite, normalizeStops, validColor, round2, round3, uid } from './utils';
 
 const enumOf = <T extends string | number>(list: T[], v: unknown, d: T): T => (list.includes(v as T) ? (v as T) : d);
 const asRecord = (raw: unknown): Record<string, unknown> => (raw && typeof raw === 'object' ? raw as Record<string, unknown> : {});
 
 export function makeFill(raw: unknown): Fill {
     const o = asRecord(raw);
+    const stops = normalizeStops(o.stops) || [
+        { color: validColor(o.start, '#ffffff'), pos: 0 },
+        { color: validColor(o.end, '#dddddd'), pos: 100 }
+    ];
     return {
         enabled: o.enabled !== false,
         mode: enumOf(FILL_MODES, o.mode, 'solid'),
         color: validColor(o.color, '#cccccc'),
-        start: validColor(o.start, '#ffffff'),
-        end: validColor(o.end, '#dddddd'),
+        start: stops[0].color,
+        end: stops[stops.length - 1].color,
+        stops,
         angle: clamp(finite(o.angle, 90), 0, 360),
         posX: clamp(finite(o.posX, 50), 0, 100),
         posY: clamp(finite(o.posY, 50), 0, 100),
         alpha: clamp(finite(o.alpha, 1), 0, 1)
+    };
+}
+export function makeStrokeGradient(raw: unknown): StrokeGradient | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const o = asRecord(raw);
+    const mode = enumOf(FILL_MODES, o.mode, 'solid');
+    if (mode === 'solid') return null;
+    return {
+        mode,
+        stops: normalizeStops(o.stops) || [{ color: '#ffffff', pos: 0 }, { color: '#1f2937', pos: 100 }],
+        angle: clamp(finite(o.angle, 45), 0, 360),
+        posX: clamp(finite(o.posX, 50), 0, 100),
+        posY: clamp(finite(o.posY, 50), 0, 100)
     };
 }
 export function makeStroke(raw: unknown): Stroke {
@@ -36,7 +54,8 @@ export function makeStroke(raw: unknown): Stroke {
     return {
         color: validColor(o.color, '#1f2937'),
         width: clamp(finite(o.width, 0), 0, 60),
-        style: enumOf(STROKE_STYLES, o.style, 'solid')
+        style: enumOf(STROKE_STYLES, o.style, 'solid'),
+        gradient: makeStrokeGradient(o.gradient)
     };
 }
 export function makeShadow(raw: unknown): Shadow {

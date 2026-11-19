@@ -21,18 +21,28 @@ export interface Point { x: number; y: number; }
 export interface Box { left: number; top: number; right: number; bottom: number; w: number; h: number; }
 export interface AABB extends Box { cx: number; cy: number; }
 
+export interface GradientStop { color: string; pos: number; }
 export interface Fill {
     enabled: boolean;
     mode: FillMode;
     color: string;
     start: string;
     end: string;
+    /** 渐变全部色标（含首尾），位置 0–100 */
+    stops: GradientStop[];
     angle: number;
     posX: number;
     posY: number;
     alpha: number;
 }
-export interface Stroke { color: string; width: number; style: StrokeStyle; }
+export interface StrokeGradient {
+    mode: Exclude<FillMode, 'solid'>;
+    stops: GradientStop[];
+    angle: number;
+    posX: number;
+    posY: number;
+}
+export interface Stroke { color: string; width: number; style: StrokeStyle; gradient: StrokeGradient | null; }
 export interface Shadow { enabled: boolean; type: ShadowType; color: string; x: number; y: number; blur: number; opacity: number; }
 export interface TextRun { text: string; bold: boolean; italic: boolean; underline: boolean; color: string; }
 export interface TextStyle {

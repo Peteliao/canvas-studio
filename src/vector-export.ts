@@ -2,7 +2,7 @@ import { state } from './state';
 import { shapePoints } from './shapes';
 import { finite, round2 } from './utils';
 import { curveFillOn, curvePathD, curveStrokeOn } from './model';
-import { hexToRgba, lineHeightFor, wavyDashSpec, wavyGeom } from './style';
+import { fillStops, gradientDefMarkup, hexToRgba, lineHeightFor, strokeDefMarkup, wavyDashSpec, wavyGeom } from './style';
 import { canvasTextWidth, textMeasureCtx } from './render';
 import { layoutText } from './exporter';
 import type { ExportBounds } from './exporter';
@@ -16,18 +16,13 @@ function xmlEscape(s: string): string {
 export function fillDefs(id: string, f: Fill): { def: string; ref: string } {
     if (!f.enabled) return { def: '', ref: 'none' };
     if (f.mode === 'solid') return { def: '', ref: hexToRgba(f.color, finite(f.alpha, 1)) };
-    const a = finite(f.alpha, 1), s = hexToRgba(f.start, a), e = hexToRgba(f.end, a);
-    if (f.mode === 'linear') {
-        const rad = f.angle * Math.PI / 180, dx = Math.sin(rad) * 50, dy = -Math.cos(rad) * 50;
-        return { def: `<linearGradient id="${id}" x1="${50 - dx}%" y1="${50 - dy}%" x2="${50 + dx}%" y2="${50 + dy}%"><stop offset="0" stop-color="${s}"/><stop offset="1" stop-color="${e}"/></linearGradient>`, ref: `url(#${id})` };
-    }
-    if (f.mode === 'radial') return { def: `<radialGradient id="${id}" cx="${f.posX}%" cy="${f.posY}%" r="75%"><stop offset="0" stop-color="${s}"/><stop offset="1" stop-color="${e}"/></radialGradient>`, ref: `url(#${id})` };
-    return { def: `<linearGradient id="${id}" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0" stop-color="${s}"/><stop offset="1" stop-color="${e}"/></linearGradient>`, ref: `url(#${id})` };
+    const def = gradientDefMarkup(id, f.mode, f.angle, f.posX, f.posY, fillStops(f), finite(f.alpha, 1));
+    return { def, ref: `url(#${id})` };
 }
 
-function shapeSVG(el: CanvasElement, ref: string): string {
+function shapeSVG(el: CanvasElement, ref: string, strokeRef: string): string {
     const st = el.stroke && el.stroke.width > 0
-        ? ` stroke="${el.stroke.color}" stroke-width="${el.stroke.width}"${el.stroke.style === 'dashed' ? ' stroke-dasharray="8 5"' : el.stroke.style === 'dotted' ? ' stroke-dasharray="2 4"' : ''}` : '';
+        ? ` stroke="${strokeRef}" stroke-width="${el.stroke.width}"${el.stroke.style === 'dashed' ? ' stroke-dasharray="8 5"' : el.stroke.style === 'dotted' ? ' stroke-dasharray="2 4"' : ''}` : '';
     const dyn = shapePoints(el);
     if (dyn) {
         const pts = dyn.map(([x, y]) => `${x * el.w / 100},${y * el.h / 100}`).join(' ');
@@ -116,7 +111,12 @@ export function buildSVG(opts: SVGExportOpts): string {
         } else {
             const f = fillDefs('g' + i, el.fill);
             defs.push(f.def);
-            inner = shapeSVG(el, f.ref);
+            let strokeRef = el.stroke.color;
+            if (el.stroke.gradient) {
+                defs.push(strokeDefMarkup('s' + i, el.stroke.gradient));
+                strokeRef = `url(#s${i})`;
+            }
+            inner = shapeSVG(el, f.ref, strokeRef);
         }
         let maskAttr = '';
         if (el.maskAssetId && state.assets[el.maskAssetId]) {

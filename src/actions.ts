@@ -25,7 +25,7 @@ import { groupSelected, ungroupSelected, collapseAllGroups, renameSelected, rend
 import { copyToClipboardSystem, pasteFromClipboardSystem } from './clipboard';
 import { newProject, createVersion } from './projects';
 import { runSelfTest } from './selftest';
-import { eyedropper, addSwatch, applyHexInput, useColor, applyStyleChange, applyFillAlpha, applyShadowPolar, applyShadowXY, applyShadowPreset } from './swatches';
+import { eyedropper, addSwatch, applyHexInput, useColor, applyStyleChange, applyFillAlpha, applyShadowPolar, applyShadowXY, applyShadowPreset, applyStrokePaintMode, applyStrokeGradientGeometry } from './swatches';
 import { setLineStyle, setWavyDash, curveOp, clientToWorld } from './interaction';
 import { updateElementColor, updateCanvasBg, toggleElBgMode, updateElementBackground, updateElementOpacity, updateElementRadius, updateLineStyle, toggleBgMode } from './styles';
 import { updateCurveFill, updateCurveStroke } from './panel';
@@ -171,8 +171,6 @@ export function bindDelegates(): void {
         chkExportVisible: () => toggleExportVisibility(),
         elBgType: () => toggleElBgMode(),
         elColorInput: () => updateElementColor(),
-        elGradStart: () => updateElementBackground(),
-        elGradEnd: () => updateElementBackground(),
         elGradAngle: () => updateElementBackground('slider'),
         elGradAngleInput: () => updateElementBackground('number'),
         elGradPosX: () => updateElementBackground(),
@@ -193,6 +191,11 @@ export function bindDelegates(): void {
         strokeColor: () => applyStyleChange(),
         strokeWidth: () => applyStyleChange(),
         strokeStyle: () => applyStyleChange(),
+        strokePaintMode: () => applyStrokePaintMode(),
+        strokeGradAngle: () => applyStrokeGradientGeometry('slider'),
+        strokeGradAngleNum: () => applyStrokeGradientGeometry('number'),
+        strokeGradPosX: () => applyStrokeGradientGeometry('pos'),
+        strokeGradPosY: () => applyStrokeGradientGeometry('pos'),
         blendMode: () => applyStyleChange(),
         shadowEnabled: () => applyStyleChange(),
         shadowType: () => applyStyleChange(),
@@ -207,8 +210,6 @@ export function bindDelegates(): void {
         curveFillEnabled: () => updateCurveFill(),
         curveFillMode: () => updateCurveFill(),
         curveFillColor: () => updateCurveFill(),
-        curveFillGradStart: () => updateCurveFill(),
-        curveFillGradEnd: () => updateCurveFill(),
         curveFillAngle: () => updateCurveFill(),
         curveFillAlpha: () => updateCurveFill(),
         curveStrokeEnabled: () => updateCurveStroke(),

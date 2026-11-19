@@ -1,9 +1,10 @@
 import { HEX_RE, PRESET_COLORS, SHAPE_PRESETS, SHADOW_PRESETS, TEXT_PRESETS, VECTOR_SHAPE_PRESETS } from './constants';
 import type { ShapePreset, TextPreset } from './constants';
 import { state } from './state';
-import { $, clamp, elementIconEl, finite, round2, toast } from './utils';
+import { $, clamp, cloneStops, elementIconEl, finite, round2, toast } from './utils';
 import { buildElement, makeFill, makeLine, makeShadow, makeStroke, makeText, selectedEls } from './model';
-import { applyEffectTint } from './style';
+import { applyEffectTint, fillStops, mixHex } from './style';
+import { getStrokeGradientStops, setFillGradientStops, setStrokeGradientStops } from './gradeditor';
 import { renderAll, syncElement } from './render';
 import { commit, scheduleCommit } from './history';
 import { canvasCenterFor } from './view';
@@ -13,7 +14,7 @@ import { bucketSlotLabel, setBucketColor, syncBucketSwatch } from './bucket';
 import { updateCanvasBg } from './styles';
 import { syncPaintStrokeWidth } from './railstroke';
 import { startTextEdit } from './richtext';
-import type { BlendMode, ShadowType } from './types';
+import type { BlendMode, GradientStop, ShadowType, StrokeGradient } from './types';
 
 interface EyeDropperResult { sRGBHex: string; }
 declare global {
@@ -31,12 +32,35 @@ export function useColor(color: string): void {
 }
 
 /* -------------------- N5 描边 / 阴影 / 混合模式 -------------------- */
+export const defaultStrokeStops = (color: string): GradientStop[] => [
+    { color, pos: 0 }, { color: mixHex(color, '#ffffff', 0.55), pos: 100 }
+];
+function readStrokeGradient(color: string): StrokeGradient | null {
+    const mode = $<HTMLSelectElement>('strokePaintMode').value;
+    if (mode === 'solid') return null;
+    const stops = getStrokeGradientStops();
+    return {
+        mode: mode as StrokeGradient['mode'],
+        stops: stops.length >= 2 ? stops : defaultStrokeStops(color),
+        angle: clamp(finite($<HTMLInputElement>('strokeGradAngle').value, 45), 0, 360),
+        posX: clamp(finite($<HTMLInputElement>('strokeGradPosX').value, 50), 0, 100),
+        posY: clamp(finite($<HTMLInputElement>('strokeGradPosY').value, 50), 0, 100)
+    };
+}
 export function syncStyleControls(): void {
     const el = selectedEls()[0];
     if (!el) return;
     const st = el.stroke || makeStroke(null), sh = el.shadow || makeShadow(null);
     $<HTMLInputElement>('strokeColor').value = st.color; $<HTMLInputElement>('strokeWidth').value = String(st.width);
     $('strokeWidthVal').textContent = String(st.width); $<HTMLSelectElement>('strokeStyle').value = st.style;
+    $<HTMLSelectElement>('strokePaintMode').value = st.gradient ? st.gradient.mode : 'solid';
+    $('strokeGradientControls').style.display = st.gradient ? 'block' : 'none';
+    const g = st.gradient;
+    $<HTMLInputElement>('strokeGradAngle').value = String(g ? Math.round(g.angle) : 45);
+    $<HTMLInputElement>('strokeGradAngleNum').value = String(g ? Math.round(g.angle) : 45);
+    $<HTMLInputElement>('strokeGradPosX').value = String(g ? Math.round(g.posX) : 50);
+    $<HTMLInputElement>('strokeGradPosY').value = String(g ? Math.round(g.posY) : 50);
+    setStrokeGradientStops(g ? g.stops : defaultStrokeStops(st.color));
     $<HTMLSelectElement>('blendMode').value = el.blendMode || 'normal';
     $<HTMLInputElement>('shadowEnabled').checked = !!sh.enabled; $<HTMLInputElement>('shadowColor').value = sh.color;
     $<HTMLSelectElement>('shadowType').value = sh.type;
@@ -55,6 +79,7 @@ export function applyStyleChange(): void {
     const els = selectedEls().filter(e => !e.locked);
     if (!els.length) return;
     const st = makeStroke({ color: $<HTMLInputElement>('strokeColor').value, width: $<HTMLInputElement>('strokeWidth').value, style: $<HTMLSelectElement>('strokeStyle').value });
+    const grad = readStrokeGradient(st.color);
     const sh = makeShadow({ enabled: $<HTMLInputElement>('shadowEnabled').checked, type: $<HTMLSelectElement>('shadowType').value,
         color: $<HTMLInputElement>('shadowColor').value, x: $<HTMLInputElement>('shadowX').value, y: $<HTMLInputElement>('shadowY').value,
         blur: $<HTMLInputElement>('shadowBlur').value, opacity: Number($<HTMLInputElement>('shadowOpacity').value) / 100 });
@@ -64,11 +89,34 @@ export function applyStyleChange(): void {
     $('shadowOpacityVal').textContent = Math.round(sh.opacity * 100) + '%';
     syncShadowOffsetRows(sh.type);
     els.forEach(e => {
-        e.stroke = Object.assign({}, st); e.shadow = Object.assign({}, sh); e.blendMode = blend;
+        const gradient = grad ? Object.assign({}, grad, { stops: cloneStops(grad.stops) }) : null;
+        e.stroke = Object.assign({}, st, { gradient }); e.shadow = Object.assign({}, sh); e.blendMode = blend;
         syncElement(e.id);
     });
     syncPaintStrokeWidth();
     scheduleCommit();
+}
+/** 描边渐变色标变更（来自 shared editor） */
+export function applyStrokeGradientStops(stops: GradientStop[]): void {
+    const els = selectedEls().filter(e => !e.locked);
+    if (!els.length || stops.length < 2) return;
+    els.forEach(e => {
+        const prev = e.stroke || makeStroke(null);
+        const base: StrokeGradient = prev.gradient || { mode: 'linear', stops: defaultStrokeStops(prev.color), angle: 45, posX: 50, posY: 50 };
+        e.stroke = Object.assign({}, prev, { gradient: Object.assign({}, base, { stops: cloneStops(stops) }) });
+        syncElement(e.id);
+    });
+    scheduleCommit(120);
+}
+export function applyStrokePaintMode(): void {
+    const on = $<HTMLSelectElement>('strokePaintMode').value !== 'solid';
+    $('strokeGradientControls').style.display = on ? 'block' : 'none';
+    applyStyleChange();
+}
+export function applyStrokeGradientGeometry(source: 'slider' | 'number' | 'pos'): void {
+    if (source === 'slider') $<HTMLInputElement>('strokeGradAngleNum').value = $<HTMLInputElement>('strokeGradAngle').value;
+    else if (source === 'number') $<HTMLInputElement>('strokeGradAngle').value = $<HTMLInputElement>('strokeGradAngleNum').value;
+    applyStyleChange();
 }
 
 function syncShadowPolar(x: number, y: number): void {
@@ -166,8 +214,7 @@ export function applySwatch(color: string): void {
     $<HTMLInputElement>('elColorInput').value = color; $<HTMLInputElement>('elColorHex').value = color.toUpperCase();
     const solo = els.length === 1 ? els[0] : null;
     if (solo && solo.fill.mode !== 'solid') {
-        $<HTMLInputElement>('elGradStart').value = solo.fill.start;
-        $<HTMLInputElement>('elGradEnd').value = solo.fill.end;
+        setFillGradientStops(fillStops(solo.fill));
     }
     scheduleCommit();
     toast('已应用到 ' + els.length + ' 个元素', 'success');

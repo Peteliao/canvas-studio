@@ -8,7 +8,7 @@ import { openDB, loadSettings } from './db';
 import { defaultModel } from './model';
 import { loadAuto, resetHistory, resetHistoryWithSave, updateUndoRedoButtons } from './history';
 import { renderAll, syncCanvasSize, syncTransform } from './render';
-import { syncBackgroundControls, updateUI } from './panel';
+import { syncBackgroundControls, updateUI, updateCurveGradientStops } from './panel';
 import { applyTheme, applyViewSettings } from './theme';
 import { fitToScreen } from './view';
 import { updateGeoLockButton } from './selection';
@@ -18,10 +18,12 @@ import { bindDelegates, bindTouch, bindAccessibility, renderShortcuts } from './
 import { bindHotkeys } from './shortcuts';
 import { bindDropImport } from './clipboard';
 import { setTool, switchTab, syncInspectorFold } from './tools';
-import { renderSwatches, renderAssetPresets } from './swatches';
+import { renderSwatches, renderAssetPresets, applyStrokeGradientStops } from './swatches';
 import { renderLayerList } from './layerlist';
 import { renderProjectPanels, flushProjectSave } from './projects';
 import { initRail } from './rail';
+import { initGradientEditors } from './gradeditor';
+import { updateElementGradientStops } from './styles';
 
 async function boot(): Promise<void> {
     state.settings = loadSettings();
@@ -49,6 +51,7 @@ async function boot(): Promise<void> {
     applyViewSettings();
     renderAll();
     fitToScreen();   // 首次打开自动适应屏幕，避免大画布被裁切
+    initGradientEditors({ fill: updateElementGradientStops, curve: updateCurveGradientStops, stroke: applyStrokeGradientStops });
     updateUI();
     updateUndoRedoButtons();
     updateGeoLockButton();

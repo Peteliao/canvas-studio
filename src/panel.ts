@@ -1,9 +1,10 @@
 /* 面板回填：属性检查器与画布设置 */
-import type { CanvasElement, Fill, FillMode } from './types';
+import type { CanvasElement, Fill, FillMode, GradientStop } from './types';
 import { state } from './state';
-import { $, clamp, finite, setIcon } from './utils';
+import { $, clamp, cloneStops, finite, setIcon } from './utils';
 import { getEl, selectedEls, makeFill } from './model';
-import { lineHeightFor } from './style';
+import { fillStops, lineHeightFor } from './style';
+import { setCurveGradientStops, setFillGradientStops, getCurveGradientStops } from './gradeditor';
 import { syncElement, updateTextStats } from './render';
 import { scheduleCommit } from './history';
 import { syncPivotInputs, syncLineStyleSeg, syncWavyDashSeg, updateCurveNodePanel } from './interaction';
@@ -42,8 +43,7 @@ export function syncElBackgroundControls(f: Fill): void {
     $<HTMLInputElement>('elColorHex').value = f.color.toUpperCase();
     $<HTMLInputElement>('elAlphaInput').value = String(Math.round(clamp(finite(f.alpha, 1), 0, 1) * 100));
     $('elAlphaVal').textContent = $<HTMLInputElement>('elAlphaInput').value + '%';
-    $<HTMLInputElement>('elGradStart').value = f.start;
-    $<HTMLInputElement>('elGradEnd').value = f.end;
+    setFillGradientStops(fillStops(f));
     $<HTMLInputElement>('elGradAngle').value = String(f.angle);
     $<HTMLInputElement>('elGradAngleInput').value = String(f.angle);
     $<HTMLInputElement>('elGradPosX').value = String(f.posX);
@@ -66,8 +66,7 @@ export function syncCurveFillControls(el: CanvasElement | null): void {
     $<HTMLSelectElement>('curveFillMode').value = f.mode;
     $<HTMLInputElement>('curveFillColor').value = f.color;
     $('curveFillHex').textContent = f.color.toUpperCase();
-    $<HTMLInputElement>('curveFillGradStart').value = f.start;
-    $<HTMLInputElement>('curveFillGradEnd').value = f.end;
+    setCurveGradientStops(fillStops(f));
     $<HTMLInputElement>('curveFillAngle').value = String(f.angle);
     $('curveFillAngleVal').textContent = Math.round(f.angle) + '°';
     $<HTMLInputElement>('curveFillAlpha').value = String(Math.round(f.alpha * 100));
@@ -82,11 +81,11 @@ export function syncCurveFillControls(el: CanvasElement | null): void {
 export function updateCurveFill(): void {
     const el = selectedEls().find(e => e.type === 'curve' && !e.locked);
     if (!el) return;
+    const stops = getCurveGradientStops();
     const f = makeFill({
         mode: $<HTMLSelectElement>('curveFillMode').value,
         color: $<HTMLInputElement>('curveFillColor').value,
-        start: $<HTMLInputElement>('curveFillGradStart').value,
-        end: $<HTMLInputElement>('curveFillGradEnd').value,
+        stops,
         angle: $<HTMLInputElement>('curveFillAngle').value,
         alpha: Number($<HTMLInputElement>('curveFillAlpha').value) / 100
     });
@@ -100,6 +99,15 @@ export function updateCurveFill(): void {
     $('curveFillGradControls').style.display = grad ? 'block' : 'none';
     syncElement(el.id);
     scheduleCommit();
+}
+export function updateCurveGradientStops(stops: GradientStop[]): void {
+    const el = selectedEls().find(e => e.type === 'curve' && !e.locked);
+    if (!el || stops.length < 2) return;
+    el.fill.stops = cloneStops(stops);
+    el.fill.start = stops[0].color;
+    el.fill.end = stops[stops.length - 1].color;
+    syncElement(el.id);
+    scheduleCommit(120);
 }
 export function updateCurveStroke(): void {
     const el = selectedEls().find(e => e.type === 'curve' && !e.locked);
@@ -132,7 +140,7 @@ export function updatePropPanel(el: CanvasElement | null): void {
     $('lineSpecific').style.display = (isLine || isCurve) ? 'block' : 'none';
     $('textSpecific').style.display = isText ? 'block' : 'none';
     // 线条/曲线的描边由专属面板控制，禁用通用描边控件避免“无效控件”
-    ['strokeColor', 'strokeWidth', 'strokeStyle'].forEach(id => { $<HTMLInputElement>(id).disabled = isLine || isCurve; });
+    ['strokeColor', 'strokeWidth', 'strokeStyle', 'strokePaintMode'].forEach(id => { $<HTMLInputElement>(id).disabled = isLine || isCurve; });
 
     if (isLine || isCurve) {
         const ln = el.line!;

@@ -2,7 +2,7 @@ import { EXPORT_BLEND, MAX_EXPORT_PIXELS } from './constants';
 import { state } from './state';
 import { $, clamp, downloadBlob, finite, loadImage, toast } from './utils';
 import { curveFillOn, curveStrokeOn, selectedEls, sortedElements } from './model';
-import { hexToRgba, lineHeightFor, wavyDashSpec, wavyGeom } from './style';
+import { canvasGradient, fillStops, hexToRgba, lineHeightFor, wavyDashSpec, wavyGeom } from './style';
 import { canvasTextWidth } from './render';
 import { getAABB } from './geometry';
 import { shapePath } from './boolean';
@@ -21,26 +21,10 @@ export interface ExportOpts {
 export function paintFill(ctx: CanvasRenderingContext2D, fill: Fill, w: number, h: number): void {
     if (!fill.enabled) { ctx.fillStyle = 'rgba(0,0,0,0)'; return; }
     if (fill.mode === 'solid') { ctx.fillStyle = fill.color; return; }
-    const s = fill.start, e = fill.end;
-    if (fill.mode === 'linear') {
-        const rad = fill.angle * Math.PI / 180;
-        const cx = w / 2, cy = h / 2;
-        const len = (Math.abs(w * Math.sin(rad)) + Math.abs(h * Math.cos(rad))) / 2;
-        const dx = Math.sin(rad) * len, dy = -Math.cos(rad) * len;
-        const g = ctx.createLinearGradient(cx - dx, cy - dy, cx + dx, cy + dy);
-        g.addColorStop(0, s); g.addColorStop(1, e); ctx.fillStyle = g; return;
-    }
-    if (fill.mode === 'radial') {
-        const cx = w * fill.posX / 100, cy = h * fill.posY / 100;
-        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h) * 0.75);
-        g.addColorStop(0, s); g.addColorStop(1, e); ctx.fillStyle = g; return;
-    }
-    if (fill.mode === 'conic' && typeof ctx.createConicGradient === 'function') {
-        const g = ctx.createConicGradient(fill.angle * Math.PI / 180, w * fill.posX / 100, h * fill.posY / 100);
-        g.addColorStop(0, s); g.addColorStop(1, e); ctx.fillStyle = g; return;
-    }
-    const g = ctx.createLinearGradient(0, 0, w, h);
-    g.addColorStop(0, s); g.addColorStop(1, e); ctx.fillStyle = g;
+    const stops = fillStops(fill), alpha = finite(fill.alpha, 1);
+    const g = canvasGradient(ctx, fill.mode, fill.angle, fill.posX, fill.posY, stops, alpha, w, h)
+        || canvasGradient(ctx, 'linear', 135, 50, 50, stops, alpha, w, h);
+    if (g) ctx.fillStyle = g;
 }
 
 export function fontForRun(run: TextRun, t: TextStyle): string {
@@ -238,7 +222,8 @@ export async function drawExportElement(ctx: CanvasRenderingContext2D, el: Canva
     if (el.stroke && el.stroke.width > 0 && el.type !== 'text' && el.type !== 'line') {
         ctx.save();
         ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
-        ctx.strokeStyle = el.stroke.color;
+        const sg = el.stroke.gradient;
+        ctx.strokeStyle = (sg && canvasGradient(ctx, sg.mode, sg.angle, sg.posX, sg.posY, sg.stops, 1, el.w, h)) || el.stroke.color;
         ctx.lineWidth = Math.min(el.stroke.width, 40);
         if (el.stroke.style === 'dashed') ctx.setLineDash([el.stroke.width * 3, el.stroke.width * 2]);
         else if (el.stroke.style === 'dotted') ctx.setLineDash([el.stroke.width, el.stroke.width * 1.5]);
