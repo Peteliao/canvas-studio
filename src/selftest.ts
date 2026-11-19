@@ -18,11 +18,11 @@ import { neighborGapsFor, alignmentMeasures, drawMeasure } from './measure';
 import type { GapMeasure, AlignMeasure } from './measure';
 import { boxGuideMeasure } from './guides';
 import { setSelection, toggleSelection, setTransformMode } from './selection';
-import { refreshRotateMarks, rotateMarkSeedRects } from './rotatemarks';
+import { refreshRotateMarks, rotateHandleSeedRects } from './rotatemarks';
 import { linkCompatibility, linkSelected, unlinkSelected, syncLinkedOnCommit, resetLinkSnapshots } from './linked';
 import { dbAvailable } from './db';
 import { EFFECT_PRESETS } from './effects';
-import { applyStyleToElement, styleOptionEnabled, canConvertShape, convertElementShape } from './selectiontools';
+import { applyStyleToElement, styleOptionEnabled, canConvertShape, convertElementShape, syncSelectionTools } from './selectiontools';
 import { showFitFloat, hideFitFloat } from './view';
 import { beginStrokeAlignPreview, endStrokeAlignPreview } from './railstroke';
 import { showAlignPreview, resetAlignHighlight } from './alignguide';
@@ -302,10 +302,12 @@ export function runSelfTest(): void {
         assert(v.skewX === 85 && v.skewY === -85, '倾斜角未限幅');
         return '坐标往返 · AABB 扩张 · 枢轴保形 · ±85° 限幅';
     });
-    check('四角旋转标识与数值避让', () => {
+    check('旋转控件与数值 / 工具条避让', () => {
         const layer = document.getElementById('rotateMarksLayer');
         assert(!!layer, '缺少四角旋转标识浮层');
         const prevSel = state.selection.slice(), prevMode = state.transformMode, prevTool = state.tool;
+        const overlap = (a: DOMRect, b: DOMRect): boolean =>
+            Math.min(a.right, b.right) > Math.max(a.left, b.left) && Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top);
         try {
             state.tool = 'select';
             const target = state.model.elements.find(e => !e.locked && e.visible !== false);
@@ -315,16 +317,69 @@ export function runSelfTest(): void {
             assert(ms.length === 4 && !layer!.hidden, '变换模式未显示四个旋转标识');
             assert(ms.every(m => !!m.dataset.dir && !!m.style.left && !!m.style.top), '旋转标识未定位');
             assert(new Set(ms.map(m => m.dataset.dir)).size === 4, '四角标识方向重复');
-            assert(rotateMarkSeedRects().length === 4, '数值标注避让占位缺失');
+            assert(rotateHandleSeedRects().length >= 4, '数值标注避让占位缺失');
             setTransformMode(false);
             assert(layer!.hidden, '退出变换模式后旋转标识未隐藏');
+
+            // 普通选中态：顶部旋转小圆点必须同时避开尺寸数值与三个快捷按钮
+            const rot = document.querySelector<HTMLElement>('.canvas-element.active .rotator');
+            assert(!!rot && rot.getBoundingClientRect().width > 0, '普通选中态旋转小圆点未显示');
+            assert(rotateHandleSeedRects().length >= 1, '旋转小圆点避让占位缺失');
+            syncSelectionTools();
+            const rr = rot!.getBoundingClientRect();
+            const tags = Array.from(document.querySelectorAll<HTMLElement>('#measureLayer .measure-tag'));
+            assert(!tags.some(t => overlap(t.getBoundingClientRect(), rr)), '尺寸数值仍遮住旋转小圆点');
+            const tools = document.getElementById('selectionTools');
+            if (tools && !tools.hidden) {
+                assert(!overlap(tools.getBoundingClientRect(), rr), '三个快捷按钮仍遮住旋转小圆点');
+            }
         } finally {
             state.tool = prevTool;
             state.transformMode = prevMode;
             setSelection(prevSel);
             refreshRotateMarks();
         }
-        return '四角可拖拽 · 浮于数值之上 · 数值自动避让';
+        return '四角可拖拽 · 小圆点不被数值 / 按钮遮挡 · 两类控件自动避让';
+    });
+    check('画布角度数值可编辑', () => {
+        const prevSel = state.selection.slice(), prevTool = state.tool;
+        const el = state.model.elements.find(e => !e.locked && e.visible !== false && e.type !== 'line' && e.type !== 'curve');
+        assert(!!el, '无可用测试物件');
+        const prevRot = el!.rotation;
+        try {
+            state.tool = 'select';
+            el!.rotation = 35;
+            syncElement(el!.id);
+            setSelection([el!.id]);
+            drawMeasure();
+            const tag = document.querySelector<HTMLElement>('#measureLayer .measure-tag.angle');
+            assert(!!tag, '旋转后画布未显示角度数值');
+            assert(tag!.textContent!.includes('35'), '角度数值与物件不一致');
+            assert(!!tag!.querySelector('.measure-num'), '角度数值不可点击编辑');
+            const rot = document.querySelector<HTMLElement>('.canvas-element.active .rotator');
+            if (rot) {
+                const a = tag!.getBoundingClientRect(), b = rot.getBoundingClientRect();
+                assert(Math.abs((a.left + a.right) / 2 - (b.left + b.right) / 2) < 80 && a.bottom <= b.top + 1,
+                    '角度数值未紧挨旋转手柄');
+                const hit = (x: DOMRect, y: DOMRect) =>
+                    Math.min(x.right, y.right) > Math.max(x.left, y.left) && Math.min(x.bottom, y.bottom) > Math.max(x.top, y.top);
+                const allTags = Array.from(document.querySelectorAll<HTMLElement>('#measureLayer .measure-tag'));
+                assert(!allTags.some(t => hit(t.getBoundingClientRect(), b)), '旋转后数值仍遮住旋转小圆点');
+                syncSelectionTools();
+                const tools = document.getElementById('selectionTools');
+                if (tools && !tools.hidden) assert(!hit(tools.getBoundingClientRect(), b), '旋转后三个快捷按钮仍遮住旋转小圆点');
+            }
+            el!.rotation = 0;
+            syncElement(el!.id);
+            drawMeasure();
+            assert(!document.querySelector('#measureLayer .measure-tag.angle'), '未旋转时不应显示角度数值');
+        } finally {
+            el!.rotation = prevRot;
+            syncElement(el!.id);
+            state.tool = prevTool;
+            setSelection(prevSel);
+        }
+        return '∠ 角度标签 · 紧挨旋转手柄 · 点击直接改角度';
     });
     check('虚线描边渲染', () => {
         const el = buildElement('rect', 0, 0);

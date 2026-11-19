@@ -5,7 +5,7 @@ import { state, nodeMap } from './state';
 import { $, $opt, clamp, deepCopy, elementIconEl, iconEl, toast } from './utils';
 import { getEl, selectedEls, curveFillOn, curveStrokeOn, makeStroke } from './model';
 import { selectionAABB } from './geometry';
-import { rotateMarkSeedRects } from './rotatemarks';
+import { rotateHandleSeedRects } from './rotatemarks';
 import { renderAll, syncElement, syncNode } from './render';
 import { updateUI } from './panel';
 import { commit } from './history';
@@ -518,7 +518,8 @@ export function syncSelectionTools(): void {
         { x: screenRight + 9, y: midY },
         { x: state.pan.x + box.left * zoom - w - 9, y: midY }
     ];
-    const obstacles = measureTagRects().concat(rotateMarkSeedRects());
+    const tagRects = measureTagRects();
+    const handleRects = rotateHandleSeedRects();
     let bestX = clamp(raw[0].x, 6, maxX);
     let bestY = clamp(raw[0].y, 6, Math.max(6, vh - h - 6));
     let bestScore = Infinity;
@@ -526,9 +527,10 @@ export function syncSelectionTools(): void {
         const x = clamp(pos.x, 6, maxX);
         const y = clamp(pos.y, 6, Math.max(6, vh - h - 6));
         const rect: ScreenRect = { l: x, t: y, r: x + w, b: y + h };
-        const covered = obstacles.reduce((sum, o) => sum + overlapArea(rect, o), 0);
-        // 同等无遮挡时保留候选顺序；有遮挡时取覆盖面积最小
-        const score = covered * 1000 + i;
+        const tagCover = tagRects.reduce((sum, o) => sum + overlapArea(rect, o), 0);
+        const handleCover = handleRects.reduce((sum, o) => sum + overlapArea(rect, o), 0);
+        // 旋转控件优先级最高：宁可贴近数值，也先保证三个按钮不压住旋转小圆点 / 四角标识
+        const score = handleCover * 100000 + tagCover * 1000 + i;
         if (score < bestScore) { bestScore = score; bestX = x; bestY = y; }
     });
     tools.style.left = bestX + 'px';

@@ -10,7 +10,7 @@ import { commit, scheduleCommit } from './history';
 import { moveSelected, updateGeo } from './elements';
 import { applyGuideDistance, applyObjectGuideDistance, currentGuide, guideSegPath, nearestGuidesToBox, nearestObjectsToGuide } from './guides';
 import { setSelectionToolsMeasureRefresh, syncSelectionTools } from './selectiontools';
-import { refreshRotateMarks, rotateMarkSeedRects } from './rotatemarks';
+import { refreshRotateMarks, rotateHandleSeedRects } from './rotatemarks';
 import type { AABB, CanvasElement, Guide, Point } from './types';
 
 type Side = 'left' | 'right' | 'top' | 'bottom';
@@ -152,37 +152,60 @@ function measureDrawerLimit(): number | null {
 }
 /**
  * 标签批量排版：先统一读尺寸（一次布局），再统一写位置
- * pending: [{ d, cx, cy, mode:'center'|'above' }]，seeds: 需要避让的屏幕矩形
+ * pending: [{ d, cx, cy, mode:'center'|'above' }]；seeds: 需避让的屏幕矩形；
+ * hardSeeds: 硬障碍（旋转控件），候选用尽时也必须优先绕开，避免数值压住旋转手柄
  */
-function layoutMeasureTags(pending: MeasureTag[], seeds?: SeedRect[]): void {
+function layoutMeasureTags(pending: MeasureTag[], seeds?: SeedRect[], hardSeeds?: SeedRect[]): void {
     if (!pending || !pending.length) return;
     const vp = $('viewport');
     const vw = vp.clientWidth, vh = vp.clientHeight;
     const lim = measureDrawerLimit();
     const right = lim === null ? vw - 4 : clamp(lim, 140, vw - 4);
-    const items = pending.slice();
+    // 角度标签优先占位，保证旋转后始终紧挨旋转手柄、不被其它数值挤走
+    const items = pending.slice().sort((a, b) =>
+        Number(b.d.classList.contains('angle')) - Number(a.d.classList.contains('angle')));
     items.forEach(it => { it.w = it.d.offsetWidth || 46; it.h = it.d.offsetHeight || 19; });
-    const placed: SeedRect[] = (seeds || []).map(s => ({ l: s.l, r: s.r, t: s.t, b: s.b }));
+    const copy = (s: SeedRect): SeedRect => ({ l: s.l, r: s.r, t: s.t, b: s.b });
+    const placed: SeedRect[] = (seeds || []).map(copy);
+    const hard: SeedRect[] = (hardSeeds || seeds || []).map(copy);
+    const overlap = (r: SeedRect, p: SeedRect): number => {
+        const w = Math.min(r.r, p.r) - Math.max(r.l, p.l), h = Math.min(r.b, p.b) - Math.max(r.t, p.t);
+        return w > 0 && h > 0 ? w * h : 0;
+    };
     const clash = (r: SeedRect) => placed.some(p => !(r.r + 3 < p.l || r.l - 3 > p.r || r.b + 3 < p.t || r.t - 3 > p.b));
-    const CENTER: [number, number][] = [[0, 0], [0, -1], [0, 1], [-1, 0], [1, 0], [0, -2], [0, 2], [-1, -1], [1, -1], [-1, 1], [1, 1]];
-    const ABOVE: [number, number][] = [[0, -1], [0, 0], [0, -2], [-1, -1], [1, -1], [-1, 0], [1, 0], [0, 1], [0, 2], [-1, 1], [1, 1]];
+    const CENTER: [number, number][] = [[0, 0], [0, -1], [0, 1], [-1, 0], [1, 0], [0, -2], [0, 2], [-1, -1], [1, -1], [-1, 1], [1, 1],
+        [-2, -2], [2, -2], [-2, 2], [2, 2], [0, -3], [0, 3], [-3, 0], [3, 0], [-2, 0], [2, 0]];
+    const ABOVE: [number, number][] = [[0, -1], [0, 0], [0, -2], [-1, -1], [1, -1], [-1, 0], [1, 0], [0, 1], [0, 2], [-1, 1], [1, 1],
+        [-2, -2], [2, -2], [-2, 2], [2, 2], [0, -3], [0, 3], [-3, 0], [3, 0], [-2, -1], [2, -1]];
+    const rectAt = (it: MeasureTag, dx: number, dy: number, w: number, h: number) => {
+        const x = clamp(it.cx + dx * (w / 2 + 7), w / 2 + 4, Math.max(w / 2 + 4, right - w / 2));
+        const y = clamp(it.cy + dy * (h + 5), h / 2 + 4, Math.max(h / 2 + 4, vh - h / 2 - 4));
+        return { x, y, l: x - w / 2, r: x + w / 2, t: y - h / 2, b: y + h / 2 };
+    };
     items.forEach(it => {
         const w = it.w!, h = it.h!;
         const order = it.mode === 'center' ? CENTER : ABOVE;
         let pick: (SeedRect & { x: number; y: number }) | null = null;
         for (const [dx, dy] of order) {
-            const x = clamp(it.cx + dx * (w / 2 + 7), w / 2 + 4, Math.max(w / 2 + 4, right - w / 2));
-            const y = clamp(it.cy + dy * (h + 5), h / 2 + 4, Math.max(h / 2 + 4, vh - h / 2 - 4));
-            const r = { x, y, l: x - w / 2, r: x + w / 2, t: y - h / 2, b: y + h / 2 };
+            const r = rectAt(it, dx, dy, w, h);
             if (clash(r)) continue;
             pick = r;
             break;
         }
         if (!pick) {
-            const x = clamp(it.cx, w / 2 + 4, Math.max(w / 2 + 4, right - w / 2));
-            const y = clamp(it.cy, h / 2 + 4, Math.max(h / 2 + 4, vh - h / 2 - 4));
-            pick = { x, y, l: x - w / 2, r: x + w / 2, t: y - h / 2, b: y + h / 2 };
+            // 候选全被占满时做网格搜索：硬障碍（旋转小圆点 / 四角标识）权重远高于普通数值重叠
+            let bestScore = Infinity;
+            for (let dy = -4; dy <= 4; dy++) {
+                for (let dx = -4; dx <= 4; dx++) {
+                    const r = rectAt(it, dx, dy, w, h);
+                    const hardCover = hard.reduce((s, p) => s + overlap(r, p), 0);
+                    const cover = placed.reduce((s, p) => s + overlap(r, p), 0);
+                    const score = hardCover * 10000 + cover;
+                    if (score < bestScore) { bestScore = score; pick = r; }
+                }
+            }
         }
+        if (!pick) pick = rectAt(it, 0, 0, w, h);
         it.d.style.left = pick.x + 'px';
         it.d.style.top = pick.y + 'px';
         placed.push(pick);
@@ -433,14 +456,19 @@ export function drawMeasure(): void {
 
         if (rotated && rot) {
             const rx = X(rot.x), ry = Y(rot.y);
-            addTag('', d => {
+            // 固定在旋转手柄正上方并优先占位：避免被 W/H、间距、边距等数值挤到远处或盖住
+            const knob = rotateHandleSeedRects().find(s => Math.abs((s.l + s.r) / 2 - rx) < 60);
+            const ax = knob ? (knob.l + knob.r) / 2 : rx;
+            const ay = knob ? knob.t - 14 : ry - 34;
+            addTag('angle', d => {
                 tagKey(d, '∠');
                 if (locked) measureText(d, angle + '°');
                 else {
                     measureNum(d, angle, v => { $<HTMLInputElement>('geoR').value = String(v); updateGeo('r'); }, '旋转角度');
                     measureText(d, '°');
                 }
-            }, rx, ry - 24, { mode: 'center', title: '旋转角度：点击数值可直接修改' });
+            }, round2(ax), round2(ay),
+                { mode: 'center', title: '旋转角度：点击数值可直接修改（↑↓ 微调，Shift 加速，Enter 确认，Esc 取消）' });
         }
     }
     /* ---- 2. 相邻物件间距（近处才标注，避免远处长线干扰） ---- */
@@ -534,13 +562,14 @@ export function drawMeasure(): void {
         });
     }
 
-    // 统一排版：尺寸标签优先占位，其余标签依次避让；变换模式下数值一律避开四角旋转标识
-    const seeds: SeedRect[] = rotateMarkSeedRects();
+    // 统一排版：尺寸标签优先占位，其余标签依次避让；旋转控件（四角 ↻ 与顶部旋转小圆点）是硬障碍
+    const handles = rotateHandleSeedRects();
+    const seeds: SeedRect[] = handles.slice();
     if (state.settings.measureSize !== false && rotated && rot) {
         const rx = X(rot.x), ry = Y(rot.y);
         seeds.push({ l: rx - 9, r: rx + 9, t: ry - 9, b: ry + 9 });
     }
-    layoutMeasureTags(pending, seeds);
+    layoutMeasureTags(pending, seeds, handles);
     // 标签完成避让后再校正浮动工具条，确保不压住刚生成的可编辑数值
     requestAnimationFrame(syncSelectionTools);
 }

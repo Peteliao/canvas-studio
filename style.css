@@ -342,6 +342,9 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 .measure-tag.gdist { background: var(--measure-guide); }
 .measure-tag.adist { background: var(--measure-align); }
 .measure-tag.adist.aligned { background: var(--accent); }
+/* 旋转角度：橙色独立色，紧挨顶部旋转手柄，和蓝色尺寸数值区分 */
+.measure-tag.angle { background: var(--warn); box-shadow: 0 2px 8px rgba(247, 144, 9, .32), 0 0 0 1px rgba(255, 255, 255, .22) inset; }
+.measure-tag.angle .measure-num { text-decoration-color: rgba(255, 255, 255, .7); }
 .measure-tag.margin { background: var(--bg-surface); color: var(--primary); border: 1px solid var(--primary-ring); box-shadow: var(--shadow-sm); font-weight: 600; }
 .measure-tag.margin .measure-key { color: var(--text-3); opacity: 1; }
 .measure-tag.margin .measure-num { text-decoration-color: var(--primary-ring); }
@@ -401,7 +404,7 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 .resizer-s { bottom: -5px; left: calc(50% - 4.5px); cursor: ns-resize; }
 .resizer-e { top: calc(50% - 4.5px); right: -5px; cursor: ew-resize; }
 .resizer-w { top: calc(50% - 4.5px); left: -5px; cursor: ew-resize; }
-.rotator { width: 11px; height: 11px; background: var(--bg-surface); border: 1.5px solid var(--primary); position: absolute; top: -27px; left: calc(50% - 5.5px); cursor: crosshair; display: none; z-index: 10000; border-radius: 50%; box-shadow: var(--shadow-sm); }
+.rotator { width: 11px; height: 11px; background: var(--bg-surface); border: 1.5px solid var(--primary); position: absolute; top: -27px; left: calc(50% - 5.5px); cursor: crosshair; display: none; z-index: 10000; border-radius: 50%; box-shadow: 0 0 0 2px rgba(255, 255, 255, .9), var(--shadow-md); }
 .rotator-line { width: 1px; height: 16px; background: var(--primary); position: absolute; top: -16px; left: calc(50% - .5px); display: none; z-index: 9999; }
 .canvas-element.active .rotator, .canvas-element.active .rotator-line { display: block; }
 

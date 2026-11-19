@@ -9,7 +9,8 @@ import type { Point } from './types';
 
 const DIRS = ['nw', 'ne', 'se', 'sw'] as const;
 const OFFSET = 22;           // 角点外侧偏移（屏幕像素）
-const PAD = 5;               // 数值避让时的额外留白
+const PAD = 6;               // 四角标识避让留白
+const HANDLE_PAD = 9;        // 顶部旋转小圆点避让留白（数值/工具条离得更开）
 export interface ScreenSeed { l: number; t: number; r: number; b: number }
 
 let marks: HTMLDivElement[] | null = null;
@@ -67,16 +68,30 @@ export function refreshRotateMarks(): void {
         m.dataset.id = geo.id;
     });
 }
-/** 视口坐标下的标识占位，供尺寸数值标签与浮动工具条避让 */
-export function rotateMarkSeedRects(): ScreenSeed[] {
-    const layer = $opt('rotateMarksLayer');
-    if (!layer || layer.hidden) return [];
+/** 视口坐标下的旋转控件占位，供尺寸数值标签与浮动工具条避让 */
+function seedOf(n: Element, pad: number, vr: DOMRect): ScreenSeed | null {
+    const r = n.getBoundingClientRect();
+    if (r.width < .5 || r.height < .5) return null;   // display:none 的控件自然跳过
+    return {
+        l: round2(r.left - vr.left - pad), t: round2(r.top - vr.top - pad),
+        r: round2(r.right - vr.left + pad), b: round2(r.bottom - vr.top + pad)
+    };
+}
+/** 所有旋转手柄的占位：变换模式四角 ↻ + 普通选中态物件顶部的小圆点。
+ *  普通选中时四角浮层隐藏，但 .rotator 仍显示在元素内且会被数值/工具条盖住，必须一并避让 */
+export function rotateHandleSeedRects(): ScreenSeed[] {
     const vr = $('viewport').getBoundingClientRect();
-    return Array.from(layer.querySelectorAll<HTMLElement>('.rotate-mark')).map(n => {
-        const r = n.getBoundingClientRect();
-        return {
-            l: round2(r.left - vr.left - PAD), t: round2(r.top - vr.top - PAD),
-            r: round2(r.right - vr.left + PAD), b: round2(r.bottom - vr.top + PAD)
-        };
-    }).filter(s => s.r > s.l && s.b > s.t);
+    const out: ScreenSeed[] = [];
+    const layer = $opt('rotateMarksLayer');
+    if (layer && !layer.hidden) {
+        layer.querySelectorAll<HTMLElement>('.rotate-mark').forEach(n => {
+            const s = seedOf(n, PAD, vr);
+            if (s) out.push(s);
+        });
+    }
+    document.querySelectorAll<HTMLElement>('.canvas-element.active .rotator').forEach(n => {
+        const s = seedOf(n, HANDLE_PAD, vr);
+        if (s) out.push(s);
+    });
+    return out.filter(s => s.r > s.l && s.b > s.t);
 }
