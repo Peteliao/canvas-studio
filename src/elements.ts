@@ -102,14 +102,17 @@ export function updateGeo(type: 'x' | 'y' | 'w' | 'h' | 'r'): void {
     const map = { x: 'geoX', y: 'geoY', w: 'geoW', h: 'geoH', r: 'geoR' } as const;
     const value = finite($<HTMLInputElement>(map[type]).value, NaN);
     if (Number.isNaN(value)) return;
+    const ratioLocked = state.geoRatioLocked && el.type !== 'line';
+    const ratio = ratioLocked ? el.w / Math.max(1, lineHeightFor(el)) : state.geoRatio;
+    if (ratioLocked) state.geoRatio = ratio;
     if (type === 'x') el.x = value;
     else if (type === 'y') el.y = value;
     else if (type === 'w') {
         el.w = Math.max(1, value);
-        if (state.geoRatioLocked) { el.h = round2(Math.max(1, el.w / state.geoRatio)); $<HTMLInputElement>('geoH').value = String(Math.round(el.h)); }
+        if (ratioLocked) { el.h = round2(Math.max(1, el.w / ratio)); $<HTMLInputElement>('geoH').value = String(Math.round(el.h)); }
     } else if (type === 'h') {
         el.h = Math.max(1, value);
-        if (state.geoRatioLocked) { el.w = round2(Math.max(1, el.h * state.geoRatio)); $<HTMLInputElement>('geoW').value = String(Math.round(el.w)); }
+        if (ratioLocked) { el.w = round2(Math.max(1, el.h * ratio)); $<HTMLInputElement>('geoW').value = String(Math.round(el.w)); }
     } else if (type === 'r') { el.rotation = value; }
     if (el.type === 'text' && (type === 'w' || type === 'h') && el.text!.sizeMode !== 'fixed') {
         el.text!.sizeMode = 'fixed';
