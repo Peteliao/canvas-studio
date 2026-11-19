@@ -380,6 +380,14 @@
       <div class="paint-pop-swatches" id="paintPopSwatches"></div>
       <button class="paint-pop-none" id="paintPopNone" type="button">无填充</button>
       <div class="paint-pop-width" id="paintPopWidth">
+        <div class="paint-pop-align">
+          <span>描边对齐</span>
+          <div class="stroke-align-seg paint-pop-align-seg" role="radiogroup" aria-label="描边对齐">
+            <button type="button" class="seg-btn" id="paintPopAlignOutside" data-act="strokeAlign" data-arg="outside" title="描边居外" aria-label="描边居外"><svg class="ic"><use href="#i-sa-outside"/></svg></button>
+            <button type="button" class="seg-btn" id="paintPopAlignCenter" data-act="strokeAlign" data-arg="center" title="描边居中（默认）" aria-label="描边居中"><svg class="ic"><use href="#i-sa-center"/></svg></button>
+            <button type="button" class="seg-btn" id="paintPopAlignInside" data-act="strokeAlign" data-arg="inside" title="描边居内" aria-label="描边居内"><svg class="ic"><use href="#i-sa-inside"/></svg></button>
+          </div>
+        </div>
         <div class="paint-pop-width-head">
           <span>描边粗细</span>
           <input type="number" id="paintPopWidthNum" class="num-mini" min="0" max="30" step="1" value="0" aria-label="描边粗细数值">

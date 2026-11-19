@@ -3,7 +3,7 @@ import { $opt, clamp, finite } from './utils';
 import { makeLine, makeStroke, selectedEls } from './model';
 import { syncElement } from './render';
 import { scheduleCommit } from './history';
-import type { CanvasElement } from './types';
+import type { CanvasElement, StrokeAlign } from './types';
 
 function widthTargets(): CanvasElement[] {
     return selectedEls().filter(e => !e.locked && e.type !== 'text');
@@ -15,7 +15,24 @@ function elementWidth(el: CanvasElement): number {
         : finite(el.stroke && el.stroke.width, 0);
 }
 
+/** 属性面板与左侧描边弹层共用同一份对齐状态 */
+export function syncStrokeAlignControls(): void {
+    const el = selectedEls()[0];
+    const disabled = !el || el.type === 'line' || el.type === 'curve';
+    const align: StrokeAlign = el && el.stroke && el.stroke.align ? el.stroke.align : 'center';
+    (['outside', 'center', 'inside'] as const).forEach(a => {
+        const cap = a[0].toUpperCase() + a.slice(1);
+        [$opt<HTMLButtonElement>('btnStroke' + cap), $opt<HTMLButtonElement>('paintPopAlign' + cap)].forEach(b => {
+            if (!b) return;
+            b.classList.toggle('active', !disabled && align === a);
+            b.setAttribute('aria-checked', String(!disabled && align === a));
+            b.disabled = disabled;
+        });
+    });
+}
+
 export function syncPaintStrokeWidth(): void {
+    syncStrokeAlignControls();
     const range = $opt<HTMLInputElement>('paintPopWidthRange');
     const num = $opt<HTMLInputElement>('paintPopWidthNum');
     const row = $opt('paintPopWidth');

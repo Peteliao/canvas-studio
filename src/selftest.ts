@@ -448,8 +448,8 @@ export function runSelfTest(): void {
         const inLayers = textStrokeLayers(el, 1);
         assert(inLayers && alpha(inLayers.stroke), '居内描边图层为空（多字遮罩合成异常）');
         assert(svgFor().includes('<mask id="tm0"') && svgFor().includes('stroke-width="8"'), '居内描边遮罩缺失');
-        ['btnStrokeOutside', 'btnStrokeCenter', 'btnStrokeInside'].forEach(id => assert(!!document.getElementById(id), '缺少描边对齐按钮 ' + id));
-        return '填充/描边分层 · 外/中/内导出 · 三图标按钮';
+        ['btnStrokeOutside', 'btnStrokeCenter', 'btnStrokeInside', 'paintPopAlignOutside', 'paintPopAlignCenter', 'paintPopAlignInside'].forEach(id => assert(!!document.getElementById(id), '缺少描边对齐按钮 ' + id));
+        return '填充/描边分层 · 外/中/内导出 · 三图标按钮（属性面板 + 左侧弹层）';
     });
     check('形状转换', () => {
         const el = buildElement('rect', 10, 20);

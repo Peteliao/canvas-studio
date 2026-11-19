@@ -12,7 +12,7 @@ import { setSelection } from './selection';
 import { saveSettings } from './db';
 import { bucketSlotLabel, setBucketColor, syncBucketSwatch } from './bucket';
 import { updateCanvasBg } from './styles';
-import { syncPaintStrokeWidth } from './railstroke';
+import { syncPaintStrokeWidth, syncStrokeAlignControls } from './railstroke';
 import { startTextEdit } from './richtext';
 import type { BlendMode, GradientStop, ShadowType, StrokeAlign, StrokeGradient } from './types';
 
@@ -62,13 +62,7 @@ export function syncStyleControls(): void {
     $<HTMLInputElement>('strokeGradPosY').value = String(g ? Math.round(g.posY) : 50);
     setStrokeGradientStops(g ? g.stops : defaultStrokeStops(st.color));
     $<HTMLSelectElement>('blendMode').value = el.blendMode || 'normal';
-    const align = st.align || 'center';
-    (['outside', 'center', 'inside'] as const).forEach(a => {
-        const b = $('btnStroke' + a[0].toUpperCase() + a.slice(1));
-        b.classList.toggle('active', align === a);
-        b.setAttribute('aria-checked', String(align === a));
-        (b as HTMLButtonElement).disabled = el.type === 'line' || el.type === 'curve';
-    });
+    syncStrokeAlignControls();
     $<HTMLInputElement>('shadowEnabled').checked = !!sh.enabled; $<HTMLInputElement>('shadowColor').value = sh.color;
     $<HTMLSelectElement>('shadowType').value = sh.type;
     $<HTMLInputElement>('shadowX').value = String(sh.x); $('shadowXVal').textContent = String(sh.x);
