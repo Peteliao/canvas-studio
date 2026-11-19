@@ -1,7 +1,8 @@
 /* 模型与 schema 校验：所有存档/历史/项目文件的统一入口 */
 import {
     VERSION, COMPAT_VERSIONS, TYPES, FILL_MODES, LINE_STYLES, TEXT_ALIGNS, STROKE_STYLES,
-    BLEND_MODES, SHADOW_TYPES, TYPE_LABELS, MAX_CANVAS_SIDE, MAX_CURVE_NODES, CURVE_NODE_TYPES, DATA_IMAGE_RE
+    BLEND_MODES, SHADOW_TYPES, TYPE_LABELS, MAX_CANVAS_SIDE, MAX_CURVE_NODES, CURVE_NODE_TYPES, DATA_IMAGE_RE,
+    VECTOR_SHAPE_TYPES, VECTOR_SHAPE_PRESETS
 } from './constants';
 import type {
     Fill, Stroke, Shadow, TextStyle, TextRun, LineSpec, Curve, CurveNode, ImageRef,
@@ -348,6 +349,10 @@ export function buildElement(type: ElementType, x: number, y: number): CanvasEle
     };
     if (type === 'circle') { base.w = 150; base.h = 150; }
     if (type === 'triangle' || type === 'star') { base.w = 150; base.h = 150; }
+    if (VECTOR_SHAPE_TYPES.includes(type)) {
+        const preset = VECTOR_SHAPE_PRESETS.find(p => p.type === type);
+        if (preset) { base.w = preset.w; base.h = preset.h; }
+    }
     if (type === 'arrow') { base.w = 200; base.h = 100; }
     if (type === 'line') {
         base.w = 300; base.h = 4;

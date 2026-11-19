@@ -1,7 +1,7 @@
-import { HEX_RE, PRESET_COLORS, SHAPE_PRESETS, SHADOW_PRESETS, TEXT_PRESETS, TYPE_ICONS } from './constants';
+import { HEX_RE, PRESET_COLORS, SHAPE_PRESETS, SHADOW_PRESETS, TEXT_PRESETS, VECTOR_SHAPE_PRESETS } from './constants';
 import type { ShapePreset, TextPreset } from './constants';
 import { state } from './state';
-import { $, clamp, finite, iconEl, round2, toast } from './utils';
+import { $, clamp, elementIconEl, finite, round2, toast } from './utils';
 import { buildElement, makeFill, makeLine, makeShadow, makeStroke, makeText, selectedEls } from './model';
 import { renderAll, syncElement } from './render';
 import { commit, scheduleCommit } from './history';
@@ -179,15 +179,29 @@ export async function eyedropper(): Promise<void> {
     } catch { /* 用户取消 */ }
 }
 
-export function applyHexInput(id: string, targetId: string, onApply: (v: string) => void): void {
+export function applyHexInput(id: string, targetId: string, onApply: (v: string) => void, onCommit?: (v: string) => void): void {
     const input = $<HTMLInputElement>(id);
-    input.addEventListener('change', () => {
-        let v = input.value.trim();
-        if (!v.startsWith('#')) v = '#' + v;
+    const target = $<HTMLInputElement>(targetId);
+    const normalize = (raw: string): string => {
+        let v = raw.trim();
+        if (v && !v.startsWith('#')) v = '#' + v;
         if (/^#[0-9a-fA-F]{3}$/.test(v)) v = '#' + v.slice(1).split('').map(ch => ch + ch).join('');
-        if (!HEX_RE.test(v)) { toast('请输入有效的 6 位十六进制颜色', 'error'); input.value = $<HTMLInputElement>(targetId).value.toUpperCase(); return; }
-        v = v.toUpperCase(); input.value = v; $<HTMLInputElement>(targetId).value = v;
+        return v;
+    };
+    // 输入过程中：凑满 6 位立即预览，不再需要按回车
+    input.addEventListener('input', () => {
+        const v = normalize(input.value);
+        if (!HEX_RE.test(v)) return;
+        target.value = v;
         onApply(v);
+    });
+    input.addEventListener('change', () => {
+        const v = normalize(input.value);
+        if (!HEX_RE.test(v)) { toast('请输入有效的 6 位十六进制颜色', 'error'); input.value = target.value.toUpperCase(); return; }
+        const upper = v.toUpperCase();
+        input.value = upper; target.value = upper;
+        onApply(upper);
+        if (onCommit) onCommit(upper);
     });
 }
 
@@ -218,17 +232,19 @@ export function insertPresetText(p: TextPreset): void {
 }
 
 export function renderAssetPresets(): void {
-    const sg = $('shapePresets'), tg = $('textPresets');
-    sg.textContent = ''; tg.textContent = '';
-    SHAPE_PRESETS.forEach(p => {
+    const sg = $('shapePresets'), vg = $('vectorShapePresets'), tg = $('textPresets');
+    sg.textContent = ''; vg.textContent = ''; tg.textContent = '';
+    const makeShapeBtn = (p: ShapePreset, host: HTMLElement): void => {
         const b = document.createElement('button');
         b.className = 'asset-item'; b.title = '插入' + p.label;
-        b.appendChild(iconEl(TYPE_ICONS[p.type]));
+        b.appendChild(elementIconEl(p.type));
         const span = document.createElement('span'); span.textContent = p.label;
         b.appendChild(span);
         b.addEventListener('click', () => insertPresetShape(p));
-        sg.appendChild(b);
-    });
+        host.appendChild(b);
+    };
+    SHAPE_PRESETS.forEach(p => makeShapeBtn(p, sg));
+    VECTOR_SHAPE_PRESETS.forEach(p => makeShapeBtn(p, vg));
     TEXT_PRESETS.forEach(p => {
         const b = document.createElement('button');
         b.className = 'text-preset';

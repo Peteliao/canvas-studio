@@ -28,7 +28,7 @@ import { eyedropper, addSwatch, applyHexInput, useColor, applyStyleChange, apply
 import { setLineStyle, setWavyDash, curveOp, clientToWorld } from './interaction';
 import { updateElementColor, updateCanvasBg, toggleElBgMode, updateElementBackground, updateElementOpacity, updateElementRadius, updateLineStyle, toggleBgMode } from './styles';
 import { updateCurveFill, updateCurveStroke } from './panel';
-import { openBucketPicker, setBucketColor, hideBucketHover, bucketSlotLabel, bucketEditsSelection, commitBucketPicker, applySlotToSelection } from './bucket';
+import { openBucketPicker, setBucketColor, hideBucketHover, bucketSlotLabel, bucketEditsSelection, commitBucketPicker, previewBucketPicker, applySlotToSelection } from './bucket';
 import { addImage, handleImageUpload } from './image';
 import { saveSettings } from './db';
 import { syncTransform } from './render';
@@ -242,7 +242,11 @@ export function bindDelegates(): void {
         if (n) n.addEventListener('click', e => { e.stopPropagation(); openBucketPicker(slot, bucketEditsSelection()); });
     });
     const bucketColorInput = $opt<HTMLInputElement>('bucketColorInput');
-    if (bucketColorInput) bucketColorInput.addEventListener('change', () => commitBucketPicker(bucketColorInput.value));
+    if (bucketColorInput) {
+        // 拖动取色器时实时预览；确认（change）后才写入撤销历史并提示
+        bucketColorInput.addEventListener('input', () => previewBucketPicker(bucketColorInput.value));
+        bucketColorInput.addEventListener('change', () => commitBucketPicker(bucketColorInput.value));
+    }
     const bucketNoneBtn = $opt('bucketNoneBtn');
     if (bucketNoneBtn) bucketNoneBtn.addEventListener('click', e => {
         e.stopPropagation();
@@ -281,9 +285,7 @@ export function bindDelegates(): void {
     // 图层搜索
     $('layerSearch').addEventListener('input', () => renderLayerList());
     // 颜色十六进制输入
-    applyHexInput('elColorHex', 'elColorInput', () => {
-        updateElementColor(); useColor($<HTMLInputElement>('elColorInput').value);
-    });
+    applyHexInput('elColorHex', 'elColorInput', () => updateElementColor(), v => useColor(v));
     applyHexInput('bgColorHex', 'bgColorPicker', () => updateCanvasBg());
     $('bgColorPicker').addEventListener('input', () => { $<HTMLInputElement>('bgColorHex').value = $<HTMLInputElement>('bgColorPicker').value.toUpperCase(); });
     $('elColorInput').addEventListener('input', () => { $<HTMLInputElement>('elColorHex').value = $<HTMLInputElement>('elColorInput').value.toUpperCase(); });

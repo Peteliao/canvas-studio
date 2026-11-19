@@ -1,5 +1,6 @@
 /* 基础工具：DOM 查询、数值、对话框、文件与图片加载 */
-import { SVG_NS, HEX_RE } from './constants';
+import { SVG_NS, HEX_RE, POLYGON_POINTS, TYPE_ICONS } from './constants';
+import type { ElementType } from './types';
 import { imageCache } from './state';
 
 export function $<T extends HTMLElement = HTMLElement>(id: string): T {
@@ -35,6 +36,23 @@ export function setIcon(button: HTMLElement | null, name: string): void {
     if (!button) return;
     button.textContent = '';
     button.appendChild(iconEl(name));
+}
+/** 多边形形状的 SVG 预览（用于工具栏、图层列表、素材网格） */
+export function shapePreviewEl(type: string, cls?: string): SVGSVGElement | null {
+    const pts = POLYGON_POINTS[type];
+    if (!pts) return null;
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 100 100');
+    svg.setAttribute('class', 'shape-preview' + (cls ? ' ' + cls : ''));
+    svg.setAttribute('aria-hidden', 'true');
+    const poly = document.createElementNS(SVG_NS, 'polygon');
+    poly.setAttribute('points', pts.map(([x, y]) => `${x},${y}`).join(' '));
+    svg.appendChild(poly);
+    return svg;
+}
+/** 元素类型图标：多边形实时生成预览，其余类型使用 SVG 符号 */
+export function elementIconEl(type: ElementType, cls?: string): SVGSVGElement {
+    return shapePreviewEl(type, cls) || iconEl(TYPE_ICONS[type] || 'square', cls);
 }
 
 let toastTimer: number | undefined;

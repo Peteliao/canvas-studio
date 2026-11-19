@@ -1,5 +1,5 @@
 /* 内置自检 */
-import { VERSION, DB_NAME, HEX_RE, SHADOW_PRESETS } from './constants';
+import { VERSION, DB_NAME, HEX_RE, SHADOW_PRESETS, POLYGON_POINTS, CLIP_PATHS, VECTOR_SHAPE_PRESETS } from './constants';
 import type { CanvasElement, AABB } from './types';
 import { state } from './state';
 import { $, iconEl } from './utils';
@@ -150,6 +150,21 @@ export function runSelfTest(): void {
         el.stroke = makeStroke({ width: 3, style: 'dotted', color: '#000000' });
         assert(strokeOverlayMarkup(el, el.w, el.h).includes('stroke-linecap="round"'), '点线圆点缺失');
         return 'SVG 描边叠加层';
+    });
+    check('矢量形状库', () => {
+        assert(VECTOR_SHAPE_PRESETS.length === 12, '矢量形状预设数量异常');
+        VECTOR_SHAPE_PRESETS.forEach(p => {
+            const pts = POLYGON_POINTS[p.type];
+            assert(pts && pts.length >= 3, p.type + ' 缺少多边形点');
+            pts.forEach(([x, y]) => assert(x >= 0 && x <= 100 && y >= 0 && y <= 100, p.type + ' 坐标越界'));
+            assert(CLIP_PATHS[p.type] && CLIP_PATHS[p.type].startsWith('polygon('), p.type + ' 缺少 clip-path');
+            const el = buildElement(p.type, 0, 0);
+            assert(el.w === p.w && el.h === p.h, p.type + ' 默认尺寸与预设不一致');
+        });
+        const heart = buildElement('heart', 0, 0);
+        const svg = buildSVG({ bounds: { x: 0, y: 0, w: heart.w, h: heart.h }, elements: [heart], transparent: true });
+        assert(svg.includes('<polygon'), 'SVG 导出缺少多边形');
+        return VECTOR_SHAPE_PRESETS.length + ' 种矢量形状 · 渲染/导出可用';
     });
     check('文本换行与自动尺寸', () => {
         const el = buildElement('text', 0, 0);

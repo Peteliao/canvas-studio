@@ -1,6 +1,6 @@
-import { TYPE_ICONS, TYPE_LABELS } from './constants';
+import { TYPE_LABELS } from './constants';
 import { state } from './state';
-import { $, appPrompt, iconEl, toast, uid } from './utils';
+import { $, appPrompt, elementIconEl, iconEl, toast, uid } from './utils';
 import { getEl, selectedEls, sortedElements } from './model';
 import { applySelectionClasses, renderAll, syncElement } from './render';
 import { commit } from './history';
@@ -10,7 +10,7 @@ import { updateUI } from './panel';
 import { setInspectorFolded, switchTab } from './tools';
 import type { CanvasElement } from './types';
 
-function layerIcon(el: CanvasElement): SVGSVGElement { return iconEl(el.groupId ? 'group' : (TYPE_ICONS[el.type] || 'square')); }
+function layerIcon(el: CanvasElement): SVGElement { return el.groupId ? iconEl('group') : elementIconEl(el.type); }
 
 export function renderLayerList(): void {
     const host = $('layerList');

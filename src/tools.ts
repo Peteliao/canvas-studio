@@ -10,17 +10,19 @@ import { drawGuides } from './guides';
 import { drawMeasure } from './measure';
 import { renderLayerList } from './layerlist';
 import { renderProjectPanels } from './projects';
+import { syncRailGroupForTool } from './rail';
 import type { TabName, ToolName } from './types';
 
 export function setTool(name: ToolName): void {
     if (name !== 'pen' && state.pen) finishPen(false, true);
     if (name !== 'pen') renderPenDraft();
     state.tool = name;
-    ['railSelect', 'railPan', 'railText', 'railPen', 'railBucket'].forEach(id => { const n = $opt(id); if (n) n.classList.remove('active'); });
-    const railId = name === 'pan' ? 'railPan' : name === 'text' ? 'railText' : name === 'pen' ? 'railPen'
+    ['railSelect', 'railPan', 'railText', 'railLineGroup', 'railBucket'].forEach(id => { const n = $opt(id); if (n) n.classList.remove('active'); });
+    const railId = name === 'pan' ? 'railPan' : name === 'text' ? 'railText' : name === 'pen' ? 'railLineGroup'
         : name === 'bucket' ? 'railBucket' : 'railSelect';
     const btn = $opt(railId);
     if (btn) btn.classList.add('active');
+    syncRailGroupForTool(name);
     $('viewport').classList.toggle('tool-pan', name === 'pan');
     $('viewport').classList.toggle('tool-text', name === 'text');
     $('viewport').classList.toggle('tool-pen', name === 'pen');

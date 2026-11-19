@@ -5,7 +5,7 @@ import { getEl, makeStroke, curveFillOn, curveStrokeOn, selectedEls } from './mo
 import { hexToRgba } from './style';
 import { syncElement } from './render';
 import { saveSettings } from './db';
-import { commit } from './history';
+import { commit, scheduleCommit } from './history';
 import { clientToWorld, worldToLocalPoint } from './interaction';
 import type { BucketSlot, CanvasElement } from './types';
 
@@ -55,6 +55,20 @@ export function openBucketPicker(slot?: BucketSlot, editsSelection = false): voi
         try { input.showPicker(); return; } catch { /* 回退到 click */ }
     }
     input.click();
+}
+
+/** 拖动取色器时实时预览；确认由 commitBucketPicker 落历史并提示 */
+export function previewBucketPicker(color: string): void {
+    if (!HEX_RE.test(color)) return;
+    const slot = state.bucketSlot || 'fill';
+    if (pickerEditsSelection && bucketEditsSelection()) {
+        selectedEls().forEach(e => { applyBucketColor(e, slot, color); });
+        setBucketColor(slot, color);
+        scheduleCommit();
+        return;
+    }
+    setBucketColor(slot, color);
+    if (state.tool === 'bucket') syncBucketSwatch();
 }
 
 /** 取色器确认：编辑选中物件 或 设置颜料桶涂色 */

@@ -19,6 +19,7 @@ import { setTool, switchTab, syncInspectorFold } from './tools';
 import { renderSwatches, renderAssetPresets } from './swatches';
 import { renderLayerList } from './layerlist';
 import { renderProjectPanels, flushProjectSave } from './projects';
+import { initRail } from './rail';
 
 async function boot(): Promise<void> {
     state.settings = loadSettings();
@@ -52,6 +53,7 @@ async function boot(): Promise<void> {
     initCanvasInteraction();
     initCropInteraction();
     bindDelegates();
+    initRail();
     bindHotkeys();
     bindDropImport();
     bindTouch();

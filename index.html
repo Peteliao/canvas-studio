@@ -275,13 +275,18 @@
       </div>
       <div class="rail-sep"></div>
       <div class="rail-group rail-scroll">
-        <button class="rail-btn" data-act="addShape" data-arg="rect" title="插入矩形"><svg class="ic"><use href="#i-square"/></svg><span>矩形</span></button>
-        <button class="rail-btn" data-act="addShape" data-arg="circle" title="插入圆形"><svg class="ic"><use href="#i-circle"/></svg><span>圆形</span></button>
-        <button class="rail-btn" data-act="addShape" data-arg="triangle" title="插入三角形"><svg class="ic"><use href="#i-triangle"/></svg><span>三角</span></button>
-        <button class="rail-btn" data-act="addShape" data-arg="star" title="插入五角星"><svg class="ic"><use href="#i-star"/></svg><span>星形</span></button>
-        <button class="rail-btn" data-act="addShape" data-arg="arrow" title="插入箭头"><svg class="ic"><use href="#i-arrow"/></svg><span>箭头</span></button>
-        <button class="rail-btn" data-act="addShape" data-arg="line" title="插入线条"><svg class="ic"><use href="#i-line"/></svg><span>线条</span></button>
-        <button class="rail-btn" id="railPen" data-act="setTool" data-arg="pen" title="钢笔工具 (P)：点击加角点，按住拖拽画圆滑曲线；Alt+点击锚点或 Alt+落新点让下一段变直线；点回起点闭合，Enter 结束"><svg class="ic"><use href="#i-pen"/></svg><span>钢笔</span></button>
+        <div class="rail-menu-wrap" id="railShapeGroup">
+          <button class="rail-btn has-menu" id="railShapeBtn" type="button" aria-haspopup="menu" aria-expanded="false" title="形状库：矩形、圆形、三角、星形及 12 种矢量形状（点击展开）">
+            <span class="rail-icon-slot" id="railShapeIcon" aria-hidden="true"></span><span>形状</span>
+          </button>
+        </div>
+        <div class="rail-menu-wrap" id="railLineGroup">
+          <button class="rail-btn has-menu" id="railLineBtn" type="button" aria-haspopup="menu" aria-expanded="false" title="箭头、线条与钢笔（点击展开）">
+            <span class="rail-icon-slot" id="railLineIcon" aria-hidden="true"></span><span id="railLineLabel">线条</span>
+          </button>
+        </div>
+        <div class="rail-menu rail-menu-shapes" id="railShapeMenu" role="menu" aria-label="形状库" hidden></div>
+        <div class="rail-menu rail-menu-lines" id="railLineMenu" role="menu" aria-label="线条工具" hidden></div>
         <button class="rail-btn" id="railBucket" data-act="setTool" data-arg="bucket" title="颜料桶 (B)：点内部改填充、点边缘改描边；按住拖动连续上色，Shift 强制描边，Alt+点击吸色"><svg class="ic"><use href="#i-bucket"/></svg><span>填色</span></button>
         <div class="rail-color-card" id="bucketColorCard">
           <button class="rail-color-slot active" id="bucketFillSlot" title="填充色：点此选色" aria-label="填充色">
@@ -719,6 +724,10 @@
           <section class="panel-card">
             <div class="card-head"><span><svg class="ic"><use href="#i-sparkle"/></svg> 形状预设</span></div>
             <div class="asset-grid" id="shapePresets"></div>
+          </section>
+          <section class="panel-card">
+            <div class="card-head"><span><svg class="ic"><use href="#i-square"/></svg> 更多矢量形状</span></div>
+            <div class="asset-grid" id="vectorShapePresets"></div>
           </section>
           <section class="panel-card">
             <div class="card-head"><span><svg class="ic"><use href="#i-font"/></svg> 文字样式预设</span></div>

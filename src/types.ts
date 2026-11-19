@@ -1,6 +1,8 @@
 /* 核心数据类型：结构化模型（唯一数据源） */
 
-export type ElementType = 'rect' | 'circle' | 'triangle' | 'star' | 'arrow' | 'line' | 'curve' | 'text' | 'image' | 'boolean';
+export type ElementType = 'rect' | 'circle' | 'triangle' | 'star' | 'arrow' | 'line' | 'curve' | 'text' | 'image' | 'boolean'
+    | 'hexagon' | 'pentagon' | 'diamond' | 'trapezoid' | 'parallelogram' | 'cross'
+    | 'semicircle' | 'heart' | 'cloud' | 'moon' | 'speech' | 'drop';
 export type FillMode = 'solid' | 'linear' | 'radial' | 'conic';
 export type LineStyle = 'solid' | 'dashed' | 'dotted' | 'wavy';
 export type StrokeStyle = 'solid' | 'dashed' | 'dotted';
