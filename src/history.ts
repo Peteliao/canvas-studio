@@ -30,10 +30,15 @@ export function saveAuto(json: string): boolean {
 /** 连续滑块/输入只提交一次历史，避免 50 步被瞬间耗尽 */
 export function scheduleCommit(delay?: number): void {
     clearTimeout(commitTimer);
-    commitTimer = window.setTimeout(commit, delay === undefined ? 220 : delay);
+    commitTimer = window.setTimeout(() => { commitTimer = undefined; commit(); }, delay === undefined ? 220 : delay);
+}
+/** 是否有等待中的防抖提交（悬停试穿前先结算，避免快照混入未提交状态） */
+export function hasPendingCommit(): boolean {
+    return commitTimer !== undefined;
 }
 export function commit(): void {
     clearTimeout(commitTimer);
+    commitTimer = undefined;
     if (isApplyingHistory) return;
     // 关联副本：先按上次签名把变化成员的样式 / 尺寸传播给同组，再生成历史
     syncLinkedOnCommit();
@@ -71,7 +76,7 @@ export function applySnapshot(json: string): boolean {
     state.guideSel = null;
     if (parsed.assets) Object.assign(state.assets, parsed.assets);
     state.selection = [];
-    if (commitTimer) clearTimeout(commitTimer);
+    if (commitTimer) { clearTimeout(commitTimer); commitTimer = undefined; }
     resetLinkSnapshots();
     renderAll();
     syncCanvasSize();

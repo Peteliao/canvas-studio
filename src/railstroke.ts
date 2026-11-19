@@ -1,9 +1,9 @@
 /* 填充/描边弹窗：描边粗细滑块与数值输入（作用于选中物件） */
 import { $opt, clamp, finite } from './utils';
-import { makeLine, makeStroke, selectedEls } from './model';
+import { getEl, makeLine, makeStroke, selectedEls } from './model';
 import { syncElement } from './render';
-import { scheduleCommit } from './history';
-import type { CanvasElement, StrokeAlign } from './types';
+import { commit, hasPendingCommit, scheduleCommit } from './history';
+import type { CanvasElement, Stroke, StrokeAlign } from './types';
 
 function widthTargets(): CanvasElement[] {
     return selectedEls().filter(e => !e.locked && e.type !== 'text');
@@ -29,6 +29,78 @@ export function syncStrokeAlignControls(): void {
             b.disabled = disabled;
         });
     });
+}
+
+/* -------------------- 描边对齐悬停试穿 -------------------- */
+interface AlignPreviewRec { id: string; original: Stroke; applied: Stroke }
+let alignPreview: AlignPreviewRec[] | null = null;
+let previewBtn: Element | null = null;
+let previewAlign: StrokeAlign | null = null;
+
+function previewTargets(): CanvasElement[] {
+    return selectedEls().filter(e => !e.locked && e.type !== 'line' && e.type !== 'curve');
+}
+
+/** 悬停试穿：快照原描边后临时改 align，只重绘、不落历史；点击时再正式提交 */
+export function beginStrokeAlignPreview(align: StrokeAlign, btn?: Element | null): void {
+    const els = previewTargets();
+    if (!els.length) return;
+    if (alignPreview && previewAlign === align && previewBtn === btn) return;
+    if (!alignPreview) {
+        if (hasPendingCommit()) commit(); // 先结算滑块的防抖提交，避免历史/自动保存混入未提交的试穿状态
+        alignPreview = [];
+    }
+    // 撤销/外部替换后旧快照失效：引用不符的记录丢弃并重新快照
+    alignPreview = alignPreview.filter(r => {
+        const el = getEl(r.id);
+        return !!el && el.stroke === r.applied;
+    });
+    els.forEach(e => {
+        let rec = alignPreview!.find(r => r.id === e.id);
+        if (!rec) {
+            rec = { id: e.id, original: e.stroke, applied: makeStroke(null) };
+            alignPreview!.push(rec);
+        }
+        rec.applied = Object.assign({}, rec.original, { align });
+        e.stroke = rec.applied;
+        syncElement(e.id);
+    });
+    previewBtn = btn || null;
+    previewAlign = align;
+    document.querySelectorAll('[data-act="strokeAlign"]').forEach(b => b.classList.toggle('previewing', b === btn));
+}
+
+/** 结束试穿：还原快照；描边引用已被撤销/替换的元素跳过，避免覆盖新状态 */
+export function endStrokeAlignPreview(): void {
+    const recs = alignPreview;
+    alignPreview = null;
+    previewBtn = null;
+    previewAlign = null;
+    document.querySelectorAll('[data-act="strokeAlign"].previewing').forEach(b => b.classList.remove('previewing'));
+    if (!recs) return;
+    recs.forEach(r => {
+        const el = getEl(r.id);
+        if (!el || el.stroke !== r.applied) return;
+        el.stroke = r.original;
+        syncElement(r.id);
+    });
+}
+
+export function bindStrokeAlignPreview(): void {
+    const btnOf = (t: EventTarget | null): HTMLButtonElement | null =>
+        t instanceof Element ? t.closest<HTMLButtonElement>('[data-act="strokeAlign"]') : null;
+    document.addEventListener('pointerover', e => {
+        const b = btnOf(e.target);
+        if (!b || b.disabled) return;
+        const a = b.dataset.arg;
+        if (a === 'outside' || a === 'center' || a === 'inside') beginStrokeAlignPreview(a, b);
+    });
+    document.addEventListener('pointerout', e => {
+        if (!btnOf(e.target)) return;
+        if (btnOf(e.relatedTarget)) return;
+        endStrokeAlignPreview();
+    });
+    window.addEventListener('blur', () => endStrokeAlignPreview());
 }
 
 export function syncPaintStrokeWidth(): void {

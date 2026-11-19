@@ -12,7 +12,7 @@ import { setSelection } from './selection';
 import { saveSettings } from './db';
 import { bucketSlotLabel, setBucketColor, syncBucketSwatch } from './bucket';
 import { updateCanvasBg } from './styles';
-import { syncPaintStrokeWidth, syncStrokeAlignControls } from './railstroke';
+import { syncPaintStrokeWidth, syncStrokeAlignControls, endStrokeAlignPreview } from './railstroke';
 import { startTextEdit } from './richtext';
 import type { BlendMode, GradientStop, ShadowType, StrokeAlign, StrokeGradient } from './types';
 
@@ -105,6 +105,7 @@ export function setStrokeAlign(align: string): void {
     const a = align as StrokeAlign;
     const els = selectedEls().filter(e => !e.locked && e.type !== 'line' && e.type !== 'curve');
     if (!els.length) return;
+    endStrokeAlignPreview();
     els.forEach(e => {
         const prev = e.stroke || makeStroke(null);
         e.stroke = Object.assign({}, prev, { align: a });

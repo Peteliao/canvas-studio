@@ -31,6 +31,7 @@ import { setLineStyle, setWavyDash, curveOp, clientToWorld } from './interaction
 import { updateElementColor, updateCanvasBg, toggleElBgMode, updateElementBackground, updateElementOpacity, updateElementRadius, updateLineStyle, toggleBgMode } from './styles';
 import { updateCurveFill, updateCurveStroke, updateUI } from './panel';
 import { openBucketPicker, hideBucketHover, bucketEditsSelection, commitBucketPicker, previewBucketPicker, bindPaintPopoverControls, setBucketColor, bucketSlotLabel } from './bucket';
+import { bindStrokeAlignPreview } from './railstroke';
 import { addImage, handleImageUpload } from './image';
 import { saveSettings } from './db';
 import { syncTransform } from './render';
@@ -287,6 +288,7 @@ export function bindDelegates(): void {
         bucketColorInput.addEventListener('change', () => commitBucketPicker(bucketColorInput.value));
     }
     bindPaintPopoverControls();
+    bindStrokeAlignPreview();
     document.addEventListener('mouseleave', () => { if (state.tool === 'bucket') hideBucketHover(); });
 
     $('imageInput').addEventListener('change', e => { void handleImageUpload(e.target as HTMLInputElement); });

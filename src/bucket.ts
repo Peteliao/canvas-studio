@@ -7,7 +7,7 @@ import { syncElement } from './render';
 import { saveSettings } from './db';
 import { commit, scheduleCommit } from './history';
 import { clientToWorld, worldToLocalPoint } from './interaction';
-import { syncPaintStrokeWidth, applyPaintStrokeWidth } from './railstroke';
+import { syncPaintStrokeWidth, applyPaintStrokeWidth, endStrokeAlignPreview } from './railstroke';
 import { updateUI } from './panel';
 import type { BucketSlot, CanvasElement } from './types';
 
@@ -51,6 +51,7 @@ export function isPaintPopoverOpen(): boolean {
 }
 
 export function closePaintPopover(): void {
+    endStrokeAlignPreview();
     const p = $opt('paintPopover');
     if (p) p.hidden = true;
     paintAnchor?.classList.remove('popover-open');

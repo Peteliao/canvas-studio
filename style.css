@@ -231,8 +231,8 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 .paint-pop-width.disabled { opacity: .5; }
 .paint-pop-align { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 11px; color: var(--text-2); }
 .paint-pop-align > span { flex: 0 0 auto; }
-.paint-pop-align-seg .seg-btn { padding: 4px 0; }
-.paint-pop-align-seg .seg-btn .ic { width: 16px; height: 16px; }
+.paint-pop-align-seg .seg-btn { padding: 3px 0; }
+.paint-pop-align-seg .seg-btn .ic { width: 19px; height: 19px; }
 .paint-pop-width-head { display: flex; align-items: center; gap: 5px; margin-bottom: 6px; font-size: 11px; color: var(--text-2); }
 .paint-pop-width-head > span:first-child { flex: 1; }
 .paint-pop-width-head .num-mini { width: 48px; }
@@ -466,10 +466,11 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 /* 描边对齐分段控件 */
 .control-row.stroke-align-row { align-items: center; }
 .stroke-align-seg { display: flex; flex: 1; gap: 4px; min-width: 0; }
-.stroke-align-seg .seg-btn { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 5px 2px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-surface-2); color: var(--text-2); font-size: 10px; cursor: pointer; }
+.stroke-align-seg .seg-btn { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 5px 2px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-surface-2); color: var(--text-2); font-size: 10px; cursor: pointer; transition: border-color var(--transition), background var(--transition), color var(--transition); }
 .stroke-align-seg .seg-btn:hover { border-color: var(--border-strong); color: var(--text); }
 .stroke-align-seg .seg-btn.active { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
-.stroke-align-seg .seg-btn .ic { width: 14px; height: 14px; }
+.stroke-align-seg .seg-btn.previewing { border-color: var(--primary); border-style: dashed; background: var(--primary-soft); color: var(--primary); }
+.stroke-align-seg .seg-btn .ic { width: 16px; height: 16px; }
 .stroke-align-seg .seg-btn:disabled { opacity: .4; cursor: not-allowed; }
 
 /* 旋转枢轴：琥珀色十字准星，与蓝色缩放手柄区分 */

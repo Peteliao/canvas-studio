@@ -5,13 +5,13 @@ import { state } from './state';
 import { $, iconEl } from './utils';
 import { validateProject, snapshotJSON, makeFill, makeLine, makeStroke, makeShadow, makeText, buildElement, validateElement,
     curvePathD, curveFillOn, curveStrokeOn, validateGuide, curveSegPts, splitCubic, cubicAt, sortedElements,
-    curveNodesBox, curveLocalBox } from './model';
+    curveNodesBox, curveLocalBox, selectedEls } from './model';
 import { elementSnapPoints, nearestSnapPoint, nearestPointSnap } from './snappoints';
 import { applyEffectTint, fillToCSS, shapeFilter, lineHeightFor, wavyDashSpec, wavyDataURI, strokeOverlayMarkup } from './style';
 import { buildSVG, buildPDF } from './vector-export';
 import { SHAPE_PARAM_SPECS, shapePoints, shapeClipPath, sanitizeShapeParams } from './shapes';
 import { getAABB, setPivot, elementLocalToWorld, elementWorldToLocal } from './geometry';
-import { textMeasureCtx, canvasTextWidth, applyAutoSize, renderAll } from './render';
+import { textMeasureCtx, canvasTextWidth, applyAutoSize, renderAll, syncElement } from './render';
 import { layoutText, exportBoundsFor, textStrokeLayers } from './exporter';
 import { bucketColor, elementSlotColor, applyBucketColor } from './bucket';
 import { neighborGapsFor, alignmentMeasures, drawMeasure } from './measure';
@@ -23,6 +23,7 @@ import { dbAvailable } from './db';
 import { EFFECT_PRESETS } from './effects';
 import { applyStyleToElement, styleOptionEnabled, canConvertShape, convertElementShape } from './selectiontools';
 import { showFitFloat, hideFitFloat } from './view';
+import { beginStrokeAlignPreview, endStrokeAlignPreview } from './railstroke';
 
 export function runSelfTest(): void {
     const results: { name: string; ok: boolean; detail: string }[] = [];
@@ -450,6 +451,27 @@ export function runSelfTest(): void {
         assert(svgFor().includes('<mask id="tm0"') && svgFor().includes('stroke-width="8"'), '居内描边遮罩缺失');
         ['btnStrokeOutside', 'btnStrokeCenter', 'btnStrokeInside', 'paintPopAlignOutside', 'paintPopAlignCenter', 'paintPopAlignInside'].forEach(id => assert(!!document.getElementById(id), '缺少描边对齐按钮 ' + id));
         return '填充/描边分层 · 外/中/内导出 · 三图标按钮（属性面板 + 左侧弹层）';
+    });
+    check('描边对齐悬停试穿', () => {
+        const prevSel = state.selection.slice();
+        const el = selectedEls().find(e => e.type !== 'line' && e.type !== 'curve' && !e.locked)
+            || state.model.elements.find(e => e.type !== 'line' && e.type !== 'curve' && !e.locked);
+        if (!el) return '当前无矩形/文本可测，跳过';
+        const original = el.stroke;
+        try {
+            if (!state.selection.includes(el.id)) setSelection([el.id]);
+            const target = original.align === 'outside' ? 'inside' : 'outside';
+            beginStrokeAlignPreview(target);
+            assert(el.stroke !== original && el.stroke.align === target, '悬停未即时切换对齐');
+            endStrokeAlignPreview();
+            assert(el.stroke === original, '移出未按快照还原描边');
+        } finally {
+            endStrokeAlignPreview();
+            el.stroke = original;
+            syncElement(el.id);
+            setSelection(prevSel);
+        }
+        return '悬停即时预览 · 移出按引用还原';
     });
     check('形状转换', () => {
         const el = buildElement('rect', 10, 20);
