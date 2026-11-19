@@ -112,7 +112,7 @@ export function canvasSnapPoints(): SnapPoint[] {
 export function collectSnapPoints(ignoreIds: Set<string>): SnapPoint[] {
     const out = canvasSnapPoints();
     state.model.elements.forEach(e => {
-        if (ignoreIds.has(e.id) || !e.visible) return;
+        if (ignoreIds.has(e.id) || !e.visible || (state.isolating && !state.selection.includes(e.id))) return;
         out.push(...elementSnapPoints(e));
     });
     return out;

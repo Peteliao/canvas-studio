@@ -20,6 +20,7 @@ import { boxGuideMeasure } from './guides';
 import { setSelection } from './selection';
 import { dbAvailable } from './db';
 import { EFFECT_PRESETS } from './effects';
+import { applyStyleToElement, styleOptionEnabled } from './selectiontools';
 
 export function runSelfTest(): void {
     const results: { name: string; ok: boolean; detail: string }[] = [];
@@ -76,6 +77,30 @@ export function runSelfTest(): void {
         const csvg = buildSVG({ bounds: { x: 0, y: 0, w: curve.w, h: curve.h }, elements: [curve], transparent: true });
         assert(csvg.includes('id="cs0"') && csvg.includes('stroke="url(#cs0)"'), '曲线描边渐变未导出');
         return '4 色标填充 · 3 色标描边 · 曲线描边渐变 · 存档/导出一致';
+    });
+    check('样式刷复制填充与描边', () => {
+        const src = buildElement('rect', 0, 0);
+        src.fill = makeFill({
+            mode: 'linear', color: '#112233', alpha: 0.6,
+            stops: [{ color: '#ff0000', pos: 0 }, { color: '#00ff00', pos: 50 }, { color: '#0000ff', pos: 100 }]
+        });
+        src.stroke = makeStroke({
+            color: '#ff8800', width: 5,
+            gradient: { mode: 'linear', angle: 30, posX: 50, posY: 50,
+                stops: [{ color: '#ff8800', pos: 0 }, { color: '#22cc88', pos: 100 }] }
+        });
+        const dst = buildElement('circle', 10, 10);
+        dst.stroke = makeStroke({ color: '#000000', width: 1 });
+        assert(styleOptionEnabled(src, dst, 'all'), '全部样式选项不可用');
+        assert(applyStyleToElement(src, dst, 'all'), '样式应用失败');
+        assert(dst.fill.mode === 'linear' && dst.fill.stops.length === 3 && Math.abs(dst.fill.alpha - 0.6) < 1e-6, '填充未完整复制');
+        assert(dst.stroke.width === 5 && dst.stroke.color === '#ff8800' && !!dst.stroke.gradient
+            && dst.stroke.gradient.stops.length === 2, '描边未完整复制');
+        const line = buildElement('line', 0, 0);
+        assert(!styleOptionEnabled(src, line, 'all') && styleOptionEnabled(src, line, 'strokeWidth'), '线条目标能力判断异常');
+        const text = buildElement('text', 0, 0);
+        assert(!styleOptionEnabled(src, text, 'stroke') && styleOptionEnabled(src, text, 'fill'), '文本目标能力判断异常');
+        return '填充/描边/粗细 · 目标能力过滤';
     });
     check('线条四样式', () => {
         ['solid', 'dashed', 'dotted', 'wavy'].forEach(s => assert(lineHeightFor(makeSelfLine(s)) > 0, s + ' 高度异常'));

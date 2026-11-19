@@ -265,10 +265,13 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 .ruler canvas { display: block; }
 .ruler.hidden-ruler, .ruler-corner.hidden-ruler { visibility: hidden; }
 .viewport { grid-column: 2; grid-row: 2; position: relative; overflow: hidden; background-color: var(--bg-stage); background-image: radial-gradient(var(--border-strong) .8px, transparent .8px); background-size: 20px 20px; cursor: default; touch-action: none; }
-.viewport.panning { cursor: grab; }
-.viewport.panning:active { cursor: grabbing; }
-.viewport.tool-pan { cursor: grab; }
-.viewport.tool-pan:active { cursor: grabbing; }
+.viewport.style-picking, .viewport.style-picking .canvas-element, .viewport.style-picking .canvas-element * { cursor: copy !important; }
+.viewport.style-picking .selection-tools, .viewport.style-picking .selection-tools * { cursor: pointer !important; }
+.viewport.panning, .viewport.panning .canvas-element, .viewport.panning .canvas-element * { cursor: grabbing !important; }
+.viewport.tool-pan, .viewport.tool-pan .canvas-element, .viewport.tool-pan .canvas-element * { cursor: grab !important; }
+.viewport.tool-pan:active, .viewport.tool-pan:active .canvas-element, .viewport.tool-pan:active .canvas-element * { cursor: grabbing !important; }
+.viewport.interaction-cursor, .viewport.interaction-cursor .canvas-element, .viewport.interaction-cursor .canvas-element * { cursor: var(--interaction-cursor, default) !important; }
+.viewport.interaction-cursor .selection-tools, .viewport.interaction-cursor .selection-tools * { cursor: pointer !important; }
 .viewport.tool-text { cursor: crosshair; }
 .text-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
 .text-duo .mini-select { width: 100%; }
@@ -348,10 +351,12 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 .viewport.drag-over .drop-hint { display: flex; }
 
 /* ==================== 画布元素 ==================== */
-.canvas-element { position: absolute; box-sizing: border-box; cursor: move; user-select: none; }
+.canvas-element { position: absolute; box-sizing: border-box; cursor: default; user-select: none; }
 .shape-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.canvas-element.active { outline: 2px solid var(--primary); outline-offset: 0; z-index: 999 !important; }
+.canvas-element.active { outline: 2px solid var(--primary); outline-offset: 0; }
+.canvas-element.interacting, .canvas-element.editing { z-index: 999 !important; }
 .canvas-element.editing { cursor: text; user-select: text; outline: 2px dashed var(--primary); background: rgba(255, 255, 255, .92); }
+.canvas.isolating .canvas-element:not(.active) { visibility: hidden; }
 .text-element { white-space: pre-wrap; word-break: break-word; line-height: 1.2; }
 .text-content { width: 100%; height: 100%; overflow: hidden; pointer-events: none; }
 .canvas-element.editing .text-content { pointer-events: auto; }
@@ -385,6 +390,25 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 .canvas-element.active .rotator, .canvas-element.active .rotator-line { display: block; }
 #selectionBox { position: absolute; border: 1px solid var(--primary); background: var(--primary-ring); pointer-events: none; z-index: 99999; display: none; border-radius: 2px; }
 
+/* 选中物件浮动工具条：隔离 / 样式刷 */
+.selection-tools { position: absolute; z-index: 20001; display: flex; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--bg-surface); box-shadow: var(--shadow-md); pointer-events: none; }
+.selection-tools[hidden], .selection-tools button[hidden], .selection-tools-sep[hidden] { display: none; }
+.selection-tools button { pointer-events: auto; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--text-2); cursor: pointer; }
+.selection-tools button:hover { background: var(--bg-hover); color: var(--primary); }
+.selection-tools button.active { background: var(--primary-soft); color: var(--primary); }
+.selection-tools button .ic { width: 15px; height: 15px; }
+.selection-tools-sep { width: 1px; height: 16px; margin: 0 1px; background: var(--border); }
+
+/* 样式刷：5 个紧凑图标选项 */
+.style-brush-menu { position: fixed; z-index: 260; display: flex; align-items: center; gap: 2px; padding: 4px; border: 1px solid var(--border-strong); border-radius: 11px; background: var(--bg-surface); box-shadow: 0 14px 36px rgba(16, 22, 40, .24); }
+.style-brush-menu[hidden] { display: none; }
+.style-brush-menu button { width: 34px; height: 34px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--text-2); cursor: pointer; }
+.style-brush-menu button:hover:not(:disabled) { background: var(--primary-soft); color: var(--primary); }
+.style-brush-menu button:disabled { opacity: .26; cursor: not-allowed; }
+.style-brush-menu button.style-all { color: var(--primary); background: var(--primary-soft); }
+.style-brush-menu button .ic { width: 18px; height: 18px; }
+.style-brush-menu .style-sep { width: 1px; height: 20px; margin: 0 2px; background: var(--border); }
+
 /* 旋转枢轴：琥珀色十字准星，与蓝色缩放手柄区分 */
 .pivot-handle { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; display: none; place-items: center; cursor: grab; z-index: 10002; border-radius: 50%; background: var(--bg-surface); border: 1.5px solid var(--warn); box-shadow: 0 0 0 3px rgba(247, 144, 9, .18), var(--shadow-sm); touch-action: none; }
 .pivot-handle::before, .pivot-handle::after { content: ''; position: absolute; background: var(--warn); }
@@ -403,8 +427,8 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 
 /* 曲线：路径 + 节点 + 控制柄 + 切线 */
 .curve-svg, .stroke-overlay { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-.curve-svg path { pointer-events: visiblePainted; cursor: move; }
-.stroke-overlay * { pointer-events: stroke; cursor: move; }
+.curve-svg path { pointer-events: visiblePainted; cursor: default; }
+.stroke-overlay * { pointer-events: stroke; cursor: default; }
 .curve-guides { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; display: none; z-index: 9998; }
 .canvas-element.active.solo .curve-guides { display: block; }
 .curve-guides line { stroke: var(--warn); stroke-width: 1; stroke-dasharray: 3 3; opacity: .9; }

@@ -19,6 +19,7 @@ import { drawMeasure } from './measure';
 import { endRelLayer } from './layers';
 import { closeModal } from './cropper';
 import { copyToClipboardSystem, pasteFromClipboardSystem } from './clipboard';
+import { cancelStylePick, exitIsolation } from './selectiontools';
 
 export function isInputActive(): boolean {
     const a = document.activeElement;
@@ -166,6 +167,8 @@ export function bindHotkeys(): void {
             const openModal = ['shortcutsModal', 'selftestModal', 'aboutModal', 'exportModal', 'cropModal']
                 .find(id => $(id).style.display === 'flex');
             if (openModal) closeModal(openModal);
+            else if (state.stylePickSource) cancelStylePick();
+            else if (state.isolating) exitIsolation();
             else if (state.layerPick) endRelLayer();
             else if (state.interaction && state.interaction.kind === 'crop') state.interaction = null;
             else deselectAll();

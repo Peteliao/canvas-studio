@@ -9,6 +9,7 @@ import { getAABB, pivotWorld, rotatorWorld, selectionAABB } from './geometry';
 import { commit, scheduleCommit } from './history';
 import { moveSelected, updateGeo } from './elements';
 import { applyGuideDistance, applyObjectGuideDistance, currentGuide, guideSegPath, nearestGuidesToBox, nearestObjectsToGuide } from './guides';
+import { setSelectionToolsMeasureRefresh, syncSelectionTools } from './selectiontools';
 import type { AABB, CanvasElement, Guide, Point } from './types';
 
 type Side = 'left' | 'right' | 'top' | 'bottom';
@@ -280,6 +281,7 @@ function applyNeighborGap(g: GapMeasure, v: number): void {
 }
 
 export function drawMeasure(): void {
+    syncSelectionTools();
     const layer = $opt('measureLayer');
     if (!layer) return;
     if (layer.querySelector('.measure-input')) return;   // 编辑中不重绘，避免输入框被销毁
@@ -295,6 +297,10 @@ export function drawMeasure(): void {
     if (!box) return;
     const single = state.selection.length === 1 ? getEl(state.selection[0]) : null;
     const locked = !!(single && single.locked);
+    // 隔离模式只测量可见的选中物件，避免标注到已隐藏的邻居
+    const measuredElements = state.isolating
+        ? state.model.elements.filter(e => state.selection.includes(e.id))
+        : state.model.elements;
     const z = state.zoom || 1;
     const X = (v: number) => round2(v * z + state.pan.x), Y = (v: number) => round2(v * z + state.pan.y);
     const cw = state.model.canvas.w, ch = state.model.canvas.h;
@@ -437,7 +443,7 @@ export function drawMeasure(): void {
     }
     /* ---- 2. 相邻物件间距（近处才标注，避免远处长线干扰） ---- */
     if (state.settings.measureGap !== false) {
-        const gaps = neighborGapsFor(box, state.model.elements, state.selection)
+        const gaps = neighborGapsFor(box, measuredElements, state.selection)
             .filter(g => Math.abs(g.gap) * z <= MEASURE_LIMIT.gap)
             .sort((a, b) => Math.abs(a.gap) - Math.abs(b.gap));
         gaps.forEach(g => {
@@ -458,7 +464,7 @@ export function drawMeasure(): void {
 
     /* ---- 3. 边缘对齐差（0 时显示绿色“对齐”徽标） ---- */
     if (state.settings.measureAlign !== false) {
-        const aligns = alignmentMeasures(box, state.model.elements, state.selection)
+        const aligns = alignmentMeasures(box, measuredElements, state.selection)
             .filter(a => Math.abs(a.delta) * z <= MEASURE_LIMIT.align);
         aligns.forEach(a => {
             const lenPx = (a.line.axis === 'h' ? Math.abs(X(a.line.x2) - X(a.line.x1)) : Math.abs(Y(a.line.y2) - Y(a.line.y1)));
@@ -535,6 +541,8 @@ export function drawMeasure(): void {
     layoutMeasureTags(pending, seeds);
 }
 
+setSelectionToolsMeasureRefresh(drawMeasure);
+
 /** 选中辅助线：显示法向两侧最近物件的距离，编辑时移动辅助线本身 */
 function drawGuideSelectionMeasure(layer: HTMLElement, g: Guide): void {
     const near = nearestObjectsToGuide(g);
@@ -558,6 +566,7 @@ function drawGuideSelectionMeasure(layer: HTMLElement, g: Guide): void {
     }
     const pending: MeasureTag[] = [];
     near.forEach(({ o, m }) => {
+        if (state.isolating && !state.selection.includes(o.id)) return;
         const label = '辅助线与「' + o.name + '」的距离';
         const d = document.createElement('div');
         d.className = 'measure-tag gdist';

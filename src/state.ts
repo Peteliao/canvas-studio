@@ -32,6 +32,8 @@ export const state: AppState = {
     projectName: '未命名设计',
     activeTab: 'design',
     alignBase: 'selection',
+    isolating: false,
+    stylePickSource: null,
     snapLines: [],
     touchPoints: new Map(),
     pinch: null,

@@ -103,6 +103,12 @@
   <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3 12V4h8l9 9-8 8z"/><circle cx="7.5" cy="7.5" r="1.2"/></symbol>
   <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
   <symbol id="i-clipboard" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6"/></symbol>
+  <symbol id="i-style-brush" viewBox="0 0 24 24"><path d="M14.5 3.5l6 6-8.5 8.5-4.5-1.5-1.5-4.5z"/><path d="M7.5 13.5l-3 3c-1 1-1 2.5 0 3.5s2.5 1 3.5 0l3-3"/><path d="M15.5 5.5l3 3"/></symbol>
+  <symbol id="i-style-all" viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="2" fill="currentColor" fill-opacity=".18" stroke-width="2.6"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-style-fill" viewBox="0 0 24 24"><path d="M12 3.5c3.4 3.7 6 6.7 6 10a6 6 0 0 1-12 0c0-3.3 2.6-6.3 6-10z" fill="currentColor" fill-opacity=".22"/></symbol>
+  <symbol id="i-style-stroke" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></symbol>
+  <symbol id="i-style-stroke-width" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2" stroke-width="3"/></symbol>
+  <symbol id="i-style-width" viewBox="0 0 24 24"><path d="M5 6.5h14" stroke-width="1.2"/><path d="M5 12h14" stroke-width="2.2"/><path d="M5 17.5h14" stroke-width="3.4"/></symbol>
 </svg>
 
 <div class="app-shell">
@@ -324,6 +330,11 @@
         <div class="anchors-layer" id="anchorsLayer"></div>
         <div class="pen-layer" id="penLayer"></div>
         <div class="measure-layer" id="measureLayer"></div>
+        <div class="selection-tools" id="selectionTools" role="toolbar" aria-label="选中物件快捷操作" hidden>
+          <button type="button" id="btnQuickIsolate" title="隐藏其它物件（隔离）"></button>
+          <span class="selection-tools-sep" id="quickToolsSep" hidden></span>
+          <button type="button" id="btnQuickStyle" title="样式刷：复制填充、描边与粗细"></button>
+        </div>
         <div class="drop-hint" id="dropHint"><svg class="ic"><use href="#i-upload"/></svg><span>松开以导入图片 / 文本 / 项目文件</span></div>
       </div>
     </main>
@@ -333,6 +344,9 @@
       <span class="bucket-hover-chip" id="bucketHoverChip"></span>
       <span id="bucketHoverText">填充</span>
     </div>
+
+    <!-- 样式刷：点击目标物件后出现 5 个应用选项 -->
+    <div class="style-brush-menu" id="styleBrushMenu" role="menu" aria-label="应用样式" hidden></div>
 
     <!-- 填充/描边设置弹窗：点击左侧色槽打开 -->
     <div class="paint-pop" id="paintPopover" role="dialog" aria-label="填充与描边设置" hidden>

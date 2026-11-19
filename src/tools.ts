@@ -11,6 +11,7 @@ import { drawMeasure } from './measure';
 import { renderLayerList } from './layerlist';
 import { renderProjectPanels } from './projects';
 import { syncRailGroupForTool } from './rail';
+import { syncSelectionTools } from './selectiontools';
 import type { TabName, ToolName } from './types';
 
 export function setTool(name: ToolName): void {
@@ -35,6 +36,8 @@ export function setTool(name: ToolName): void {
         toast('颜料桶：填充 ' + bucketColorLabel('fill') + ' · 描边 ' + bucketColorLabel('stroke')
             + '；点内部改填充、点边缘改描边，Shift 强制描边，Alt+点击吸色', 'success');
     }
+    syncSelectionTools();
+    drawMeasure();
 }
 
 export function toggleInspector(): void {

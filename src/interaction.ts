@@ -19,6 +19,7 @@ import { openCropModal } from './cropper';
 import { bucketHitElement, bucketDetectTarget, applyBucketColor, bucketColor, setBucketColor, bucketSlotLabel, updateBucketHover, elementSlotColor } from './bucket';
 import { useColor } from './swatches';
 import { setTool, refreshStudioUI } from './tools';
+import { handleStylePickPointerDown } from './selectiontools';
 import { setToggleButton } from './theme';
 import { selectGuide, drawGuides, isOverRuler, deleteGuide, guideGeom } from './guides';
 import { drawMeasure } from './measure';
@@ -78,6 +79,26 @@ function clearAnchorHover(): void {
     $('viewport').classList.remove('anchor-hot');
 }
 
+/** 仅在实际拖拽/缩放/旋转时切换光标，悬停不改变手势 */
+function setInteractionCursor(cursor: string | null): void {
+    const vp = $('viewport');
+    if (cursor) {
+        vp.style.setProperty('--interaction-cursor', cursor);
+        vp.classList.add('interaction-cursor');
+    } else {
+        vp.classList.remove('interaction-cursor');
+        vp.style.removeProperty('--interaction-cursor');
+    }
+}
+function markInteracting(ids: string[]): void {
+    ids.forEach(id => nodeMap.get(id)?.classList.add('interacting'));
+}
+function resizeCursor(dir: string): string {
+    if (dir === 'n' || dir === 's') return 'ns-resize';
+    if (dir === 'e' || dir === 'w') return 'ew-resize';
+    return dir === 'ne' || dir === 'sw' ? 'nesw-resize' : 'nwse-resize';
+}
+
 function updateAnchorHover(e: PointerEvent): void {
     if (state.tool !== 'select' || !(e.ctrlKey || e.metaKey) || !state.selection.length) {
         clearAnchorHover();
@@ -110,6 +131,7 @@ function startAnchorDrag(e: PointerEvent, anchor: SnapPoint, pendingNodeClick?: 
     };
     clearAnchorHover();
     $('viewport').classList.add('anchor-drag');
+    markInteracting(state.selection);
     e.preventDefault();
     return true;
 }
@@ -323,7 +345,8 @@ function isChromeUI(target: HTMLElement): boolean {
     return !!(target.closest && (target.closest('.topbar') || target.closest('.contextbar') ||
         target.closest('.tool-rail') || target.closest('.inspector') || target.closest('.statusbar') ||
         target.closest('.modal') || target.closest('.toast') || target.closest('.ruler') ||
-        target.closest('.measure-tag') || target.closest('.guide-ctrl')));
+        target.closest('.measure-tag') || target.closest('.guide-ctrl') ||
+        target.closest('.selection-tools') || target.closest('.style-brush-menu')));
 }
 /** 物件在点击位置是否有可见主体；无填充的图形只保留描边命中区，内部可穿透到下层 */
 function elementHasBody(el: CanvasElement): boolean {
@@ -376,6 +399,9 @@ function onPointerDown(e: PointerEvent): void {
         state.interaction = { kind: 'pan', lastX: e.clientX, lastY: e.clientY };
         $('viewport').classList.add('panning');
         e.preventDefault(); return;
+    }
+    if (state.stylePickSource && state.tool === 'select') {
+        if (handleStylePickPointerDown(e)) return;
     }
     if (state.tool === 'bucket') {
         if (state.isTextEditing) finishTextEdit();
@@ -450,6 +476,8 @@ function onPointerDown(e: PointerEvent): void {
         pivotH.classList.add('dragging');
         d.classList.add('pivot-peek');
         clearTimeout((d as HTMLDivElement)._peekTimer);
+        markInteracting([el.id]);
+        setInteractionCursor('grabbing');
         e.preventDefault(); return;
     }
     if (ctrlH && d) {
@@ -461,6 +489,8 @@ function onPointerDown(e: PointerEvent): void {
         state.nodeSel = { id: el.id, i };
         state.interaction = { kind: 'cctrl', id: el.id, i, h };
         ctrlH.classList.add('dragging');
+        markInteracting([el.id]);
+        setInteractionCursor('grabbing');
         syncElement(el.id);
         e.preventDefault(); return;
     }
@@ -487,6 +517,8 @@ function onPointerDown(e: PointerEvent): void {
             ox: n.x, oy: n.y
         };
         nodeH.classList.add('dragging');
+        markInteracting([el.id]);
+        setInteractionCursor('grabbing');
         syncElement(el.id);
         e.preventDefault(); return;
     }
@@ -504,6 +536,8 @@ function onPointerDown(e: PointerEvent): void {
             kind: 'resize', dir, startX: e.clientX, startY: e.clientY,
             box, items: selectedEls().filter(x => !x.locked).map(x => ({ id: x.id, x: x.x, y: x.y, w: x.w, h: x.h }))
         };
+        markInteracting(state.selection);
+        setInteractionCursor(resizeCursor(dir));
         e.preventDefault(); return;
     }
     if (rotator && d) {
@@ -522,6 +556,8 @@ function onPointerDown(e: PointerEvent): void {
             startAngle: Math.atan2(e.clientY - (vr.top + state.pan.y + center.y * state.zoom), e.clientX - (vr.left + state.pan.x + center.x * state.zoom)),
             items: items.map(x => ({ id: x.id, x: x.x, y: x.y, w: x.w, h: x.h, rotation: x.rotation, pivotX: x.pivotX, pivotY: x.pivotY }))
         };
+        markInteracting(state.selection);
+        setInteractionCursor('crosshair');
         e.preventDefault(); return;
     }
     if ((e.ctrlKey || e.metaKey) && d) {
@@ -543,6 +579,8 @@ function onPointerDown(e: PointerEvent): void {
                 kind: 'drag', startX: e.clientX, startY: e.clientY, startBox: selectionAABB(),
                 items: movable.map(x => ({ id: x.id, x: x.x, y: x.y }))
             };
+            markInteracting(state.selection);
+            setInteractionCursor('grabbing');
         }
         e.preventDefault(); return;
     }
@@ -867,6 +905,8 @@ export function endInteraction(e?: PointerEvent): void {
         else n.classList.remove('pivot-peek');
     });
     $('viewport').classList.remove('panning', 'anchor-drag');
+    setInteractionCursor(null);
+    document.querySelectorAll<HTMLElement>('.canvas-element.interacting').forEach(n => n.classList.remove('interacting'));
     state.interaction = null;
     clearSnapGuides();
     clearAnchorHover();

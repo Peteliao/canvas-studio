@@ -214,6 +214,8 @@ export interface AppState {
     projectName: string;
     activeTab: TabName;
     alignBase: 'selection' | 'canvas';
+    isolating: boolean;
+    stylePickSource: string | null;
     snapLines: SnapLine[];
     touchPoints: Map<number, Point>;
     pinch: PinchState | null;

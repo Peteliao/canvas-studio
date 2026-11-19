@@ -23,7 +23,7 @@ export function snapCandidates(ignoreIds: Set<string>): { xs: number[]; ys: numb
     const xs = [0, state.model.canvas.w / 2, state.model.canvas.w];
     const ys = [0, state.model.canvas.h / 2, state.model.canvas.h];
     state.model.elements.forEach(e => {
-        if (ignoreIds.has(e.id) || !e.visible) return;
+        if (ignoreIds.has(e.id) || !e.visible || (state.isolating && !state.selection.includes(e.id))) return;
         const a = getAABB(e);
         xs.push(a.left, a.cx, a.right); ys.push(a.top, a.cy, a.bottom);
     });

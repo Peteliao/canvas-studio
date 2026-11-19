@@ -18,6 +18,7 @@ import { bindDelegates, bindTouch, bindAccessibility, renderShortcuts } from './
 import { bindHotkeys } from './shortcuts';
 import { bindDropImport } from './clipboard';
 import { setTool, switchTab, syncInspectorFold } from './tools';
+import { bindSelectionTools } from './selectiontools';
 import { renderSwatches, renderAssetPresets, applyStrokeGradientStops } from './swatches';
 import { renderLayerList } from './layerlist';
 import { renderProjectPanels, flushProjectSave } from './projects';
@@ -58,6 +59,7 @@ async function boot(): Promise<void> {
     updateGeoLockButton();
     initCanvasInteraction();
     initCropInteraction();
+    bindSelectionTools();
     bindDelegates();
     initRail();
     bindHotkeys();
