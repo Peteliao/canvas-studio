@@ -131,7 +131,8 @@ function drawCurveElement(ctx: CanvasRenderingContext2D, el: CanvasElement): voi
     const ln = el.line!, c = el.curve!, w = el.w, h = el.h;
     const nodes = c.nodes;
     if (!nodes || nodes.length < 2) return;
-    ctx.strokeStyle = ln.color;
+    const sg = curveStrokeOn(el) ? el.stroke?.gradient : null;
+    ctx.strokeStyle = (sg && canvasGradient(ctx, sg.mode, sg.angle, sg.posX, sg.posY, sg.stops, 1, w, h)) || ln.color;
     ctx.lineWidth = ln.width;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';

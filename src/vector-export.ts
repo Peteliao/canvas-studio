@@ -105,7 +105,12 @@ export function buildSVG(opts: SVGExportOpts): string {
                 : ln.style === 'dotted' ? ` stroke-dasharray="0.1 ${ln.width * 1.8}"` : '';
             const fd = curveFillOn(el) ? fillDefs('g' + i, el.fill) : null;
             if (fd && fd.def) defs.push(fd.def);
-            inner = `<path d="${curvePathD(el.curve, el.w, el.h)}" fill="${fd ? fd.ref : 'none'}" stroke="${ln.color}" stroke-width="${curveStrokeOn(el) ? ln.width : 0}" stroke-linecap="round"${dash}/>`;
+            let strokeRef = ln.color;
+            if (curveStrokeOn(el) && el.stroke.gradient) {
+                defs.push(strokeDefMarkup('cs' + i, el.stroke.gradient));
+                strokeRef = `url(#cs${i})`;
+            }
+            inner = `<path d="${curvePathD(el.curve, el.w, el.h)}" fill="${fd ? fd.ref : 'none'}" stroke="${strokeRef}" stroke-width="${curveStrokeOn(el) ? ln.width : 0}" stroke-linecap="round"${dash}/>`;
         } else if (el.image && state.assets[el.image.assetId]) {
             inner = `<image x="0" y="0" width="${el.w}" height="${el.h}" preserveAspectRatio="none" href="${state.assets[el.image.assetId]}"/>`;
         } else {

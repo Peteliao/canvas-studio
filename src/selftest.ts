@@ -66,7 +66,16 @@ export function runSelfTest(): void {
         const svg = buildSVG({ bounds: { x: 0, y: 0, w: el.w, h: el.h }, elements: [el], transparent: true });
         assert(svg.includes('stroke="url(#s0)"') && svg.includes('id="s0"'), 'SVG 导出缺少渐变描边');
         assert(applyBucketColor(el, 'stroke', '#123456') && el.stroke.gradient === null, '纯色描边应清除旧渐变');
-        return '4 色标填充 · 3 色标描边 · 存档/导出一致';
+        const curve = buildElement('curve', 0, 0);
+        curve.line = makeLine({ width: 3, color: '#1f2937' });
+        curve.curve!.strokeOn = true;
+        curve.stroke = makeStroke({
+            width: 3, color: '#1f2937',
+            gradient: { mode: 'linear', angle: 30, posX: 50, posY: 50, stops: stops.slice(0, 3) }
+        });
+        const csvg = buildSVG({ bounds: { x: 0, y: 0, w: curve.w, h: curve.h }, elements: [curve], transparent: true });
+        assert(csvg.includes('id="cs0"') && csvg.includes('stroke="url(#cs0)"'), '曲线描边渐变未导出');
+        return '4 色标填充 · 3 色标描边 · 曲线描边渐变 · 存档/导出一致';
     });
     check('线条四样式', () => {
         ['solid', 'dashed', 'dotted', 'wavy'].forEach(s => assert(lineHeightFor(makeSelfLine(s)) > 0, s + ' 高度异常'));
@@ -145,7 +154,26 @@ export function runSelfTest(): void {
         const snap = nearestPointSnap([source], [target], 96, 104, 8);
         assert(snap && snap.dx === 4 && snap.dy === -4 && snap.target === target, '移动吸附偏移错误');
         assert(!nearestPointSnap([source], [target], 80, 80, 8), '超出阈值仍吸附');
-        return '圆心 / 象限 / 端点 / 中点 / 黄金分割 · 旋转跟随';
+        // 曲线的中点 / 黄金分割必须沿贝塞尔路径，不能落在外接矩形内部
+        const curve = buildElement('curve', 0, 0);
+        curve.w = 100; curve.h = 100;
+        const cnodes: CurveNode[] = [
+            { x: 0, y: 1, ix: 0, iy: 1, ox: 0.25, oy: 0, t: 'smooth' },
+            { x: 1, y: 1, ix: 0.75, iy: 0, ox: 1, oy: 1, t: 'smooth' }
+        ];
+        curve.curve = { nodes: cnodes, closed: false, filled: false, strokeOn: true };
+        const cps2 = elementSnapPoints(curve);
+        const onCurve: { x: number; y: number }[] = [];
+        for (let i = 0; i < cnodes.length - 1; i++) {
+            const cp = curveSegPts(cnodes, i, i + 1, curve.w, curve.h);
+            for (let s = 0; s <= 2048; s++) onCurve.push(cubicAt(cp[0], cp[1], cp[2], cp[3], s / 2048));
+        }
+        const pathDist = (p: SnapPoint): number => Math.min(...onCurve.map(q => Math.hypot(q.x - (p.x - curve.x), q.y - (p.y - curve.y))));
+        const cGolden = cps2.filter(p => p.kind === 'golden');
+        const cMid = cps2.filter(p => p.kind === 'midpoint');
+        assert(cGolden.length === 2 && cMid.length === 1, '曲线黄金分割 / 中点数量异常');
+        assert(cGolden.every(p => pathDist(p) < 0.05) && cMid.every(p => pathDist(p) < 0.05), '曲线特征点未落在路径上');
+        return '圆心 / 象限 / 端点 / 中点 / 黄金分割 · 旋转跟随 · 曲线沿路径';
     });
     check('闭合曲线填充', () => {
         const el = buildElement('curve', 0, 0);
@@ -187,6 +215,11 @@ export function runSelfTest(): void {
         cv.curve!.closed = true; cv.curve!.filled = true;
         assert(applyBucketColor(cv, 'fill', 'none') && !curveFillOn(cv), '曲线无填充未生效');
         assert(applyBucketColor(cv, 'stroke', 'none') && !curveStrokeOn(cv), '曲线无描边未生效');
+        cv.stroke = makeStroke({
+            width: 3, color: '#1f2937',
+            gradient: { mode: 'linear', angle: 45, posX: 50, posY: 50, stops: [{ color: '#ff0000', pos: 0 }, { color: '#00ff00', pos: 100 }] }
+        });
+        assert(applyBucketColor(cv, 'stroke', '#123456') && cv.stroke.gradient === null && cv.line!.color === '#123456', '曲线纯色描边应清除渐变');
         const ln = buildElement('line', 0, 0);
         assert(!applyBucketColor(ln, 'stroke', 'none'), '线条不应支持无描边');
         return '取色 · 无填充/无描边 · 重新上色恢复';

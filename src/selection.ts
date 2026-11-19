@@ -1,7 +1,9 @@
 /* 选择 */
 import { state } from './state';
 import { $, setIcon } from './utils';
-import { getEl } from './model';
+import { getEl, selectedEls } from './model';
+import { lineHeightFor } from './style';
+import { selectionAABB } from './geometry';
 import { applySelectionClasses } from './render';
 import { updateUI } from './panel';
 import { commit } from './history';
@@ -10,9 +12,21 @@ import { endRelLayer } from './layers';
 import { expandGroupIds } from './layerlist';
 import { syncBucketFromSelection } from './bucket';
 
+function refreshGeoRatio(): void {
+    if (!state.geoRatioLocked) return;
+    const els = selectedEls();
+    if (!els.length) { state.geoRatioLocked = false; updateGeoLockButton(); return; }
+    if (els.length === 1) {
+        state.geoRatio = els[0].w / Math.max(1, lineHeightFor(els[0]));
+    } else {
+        const box = selectionAABB();
+        if (box) state.geoRatio = box.w / Math.max(1, box.h);
+    }
+}
 export function setSelection(ids: string[]): void {
     const valid = ids.filter(id => !!getEl(id));
     state.selection = expandGroupIds(valid);
+    refreshGeoRatio();
     applySelectionClasses();
     updateUI();
     syncBucketFromSelection();
@@ -35,6 +49,7 @@ export function toggleSelection(id: string, additive: boolean): void {
         if (state.selection.length > 1 && state.selection.includes(id)) return;
         state.selection = [id];
     }
+    refreshGeoRatio();
     applySelectionClasses();
     updateUI();
     syncBucketFromSelection();
@@ -46,10 +61,7 @@ export function updateGeoLockButton(): void {
 }
 export function toggleSelectionLock(): void {
     state.geoRatioLocked = !state.geoRatioLocked;
-    if (state.geoRatioLocked && state.selection.length === 1) {
-        const el = getEl(state.selection[0]);
-        if (el) state.geoRatio = el.w / Math.max(1, el.h);
-    }
+    refreshGeoRatio();
     updateGeoLockButton();
 }
 export function toggleCanvasLock(): void {

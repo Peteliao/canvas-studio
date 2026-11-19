@@ -24,6 +24,7 @@ import { renderProjectPanels, flushProjectSave } from './projects';
 import { initRail } from './rail';
 import { initGradientEditors } from './gradeditor';
 import { updateElementGradientStops } from './styles';
+import { updateCurveStrokeGradientStops } from './panel';
 
 async function boot(): Promise<void> {
     state.settings = loadSettings();
@@ -51,7 +52,7 @@ async function boot(): Promise<void> {
     applyViewSettings();
     renderAll();
     fitToScreen();   // 首次打开自动适应屏幕，避免大画布被裁切
-    initGradientEditors({ fill: updateElementGradientStops, curve: updateCurveGradientStops, stroke: applyStrokeGradientStops });
+    initGradientEditors({ fill: updateElementGradientStops, curve: updateCurveGradientStops, stroke: applyStrokeGradientStops, curveStroke: updateCurveStrokeGradientStops });
     updateUI();
     updateUndoRedoButtons();
     updateGeoLockButton();

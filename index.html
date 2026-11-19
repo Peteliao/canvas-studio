@@ -294,6 +294,7 @@
         <div class="rail-menu rail-menu-lines" id="railLineMenu" role="menu" aria-label="线条工具" hidden></div>
         <div class="rail-menu rail-menu-effects" id="railEffectMenu" role="menu" aria-label="透明特效图案" hidden></div>
         <button class="rail-btn" id="railBucket" data-act="setTool" data-arg="bucket" title="颜料桶 (B)：点内部改填充、点边缘改描边；按住拖动连续上色，Shift 强制描边，Alt+点击吸色"><svg class="ic"><use href="#i-bucket"/></svg><span>填色</span></button>
+        <button class="rail-btn" id="railEyedropper" data-act="pickScreenColor" title="屏幕吸管：吸取屏幕任意位置的颜色，并自动切换到颜料桶"><svg class="ic"><use href="#i-eyedropper"/></svg><span>吸管</span></button>
         <div class="rail-color-card" id="bucketColorCard">
           <button class="rail-color-slot active" id="bucketFillSlot" title="填充：点此打开设置" aria-label="填充设置">
             <span class="rail-color-chip" id="bucketFillChip" aria-hidden="true"></span><span>填充</span>
@@ -495,7 +496,32 @@
                   <input type="color" id="curveStrokeColor" value="#1C2230" data-keepfocus="1" aria-label="曲线描边颜色">
                   <span class="value-tag" id="curveStrokeHex">#1C2230</span>
                 </div>
-                <p class="hint-text">填充与描边分别设置；粗细、实线 / 虚线 / 点线在下方「曲线样式」面板。颜料桶 (B)：点内部改填充、点边缘改描边，Shift 强制描边</p>
+                <div class="control-row">
+                  <span class="control-label">描边类型</span>
+                  <select id="curveStrokePaintMode" aria-label="曲线描边类型">
+                    <option value="solid">纯色</option>
+                    <option value="linear">线性渐变</option>
+                    <option value="radial">椭圆渐变</option>
+                    <option value="conic">圆锥渐变</option>
+                  </select>
+                </div>
+                <div id="curveStrokeGradientControls" style="display:none;">
+                  <div class="section-label">描边渐变色标</div>
+                  <div class="grad-editor" id="curveStrokeGradEditor"></div>
+                  <div class="control-row">
+                    <span class="control-label">角度</span>
+                    <input type="range" id="curveStrokeGradAngle" min="0" max="360" value="45" aria-label="曲线描边渐变角度">
+                    <input type="number" id="curveStrokeGradAngleNum" min="0" max="360" class="num-mini" value="45" aria-label="曲线描边渐变角度数值">
+                  </div>
+                  <div class="control-row">
+                    <span class="control-label">中心</span>
+                    <input type="number" id="curveStrokeGradPosX" min="0" max="100" class="num-mini" value="50" title="X %" aria-label="曲线描边渐变中心 X">
+                    <span class="unit">%</span>
+                    <input type="number" id="curveStrokeGradPosY" min="0" max="100" class="num-mini" value="50" title="Y %" aria-label="曲线描边渐变中心 Y">
+                    <span class="unit">%</span>
+                  </div>
+                </div>
+                <p class="hint-text">填充与描边分别设置；描边支持纯色与渐变，粗细、实线 / 虚线 / 点线在下方「曲线样式」面板。颜料桶 (B)：点内部改填充、点边缘改描边，Shift 强制描边</p>
               </div>
               <div class="control-row" style="margin-top:10px;">
                 <span class="control-label">不透明度</span>

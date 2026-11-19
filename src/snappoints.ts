@@ -1,6 +1,6 @@
 /* 对象捕捉点：端点 / 中线中点 / 中心 / 黄金分割 / 圆心 / 象限点 / 贝塞尔节点 */
 import { state } from './state';
-import { getEl } from './model';
+import { getEl, curveSegPts, cubicAt } from './model';
 import { lineHeightFor } from './style';
 import type { CanvasElement, Point, SnapPoint } from './types';
 
@@ -46,17 +46,30 @@ export function elementSnapPoints(el: CanvasElement, x = el.x, y = el.y): SnapPo
         return out;
     }
     if (el.type === 'curve' && el.curve) {
-        const nodes = el.curve.nodes;
+        const c = el.curve, nodes = c.nodes;
         nodes.forEach((n, i) => {
-            const end = i === 0 || i === nodes.length - 1;
+            const end = !c.closed && (i === 0 || i === nodes.length - 1);
             add(n.x * w, n.y * h, end ? 'endpoint' : 'node', end ? '端点' : '节点');
         });
-    } else {
-        add(0, 0, 'endpoint', '端点');
-        add(w, 0, 'endpoint', '端点');
-        add(w, h, 'endpoint', '端点');
-        add(0, h, 'endpoint', '端点');
+        // 曲线的中点与黄金分割点必须落在贝塞尔路径上，不能用外接矩形近似
+        const segs = c.closed ? nodes.length : Math.max(0, nodes.length - 1);
+        for (let i = 0; i < segs; i++) {
+            const j = (i + 1) % nodes.length;
+            const pts = curveSegPts(nodes, i, j, w, h);
+            const mid = cubicAt(pts[0], pts[1], pts[2], pts[3], 0.5);
+            add(mid.x, mid.y, 'midpoint', '中点');
+            for (const t of GOLDEN) {
+                const p = cubicAt(pts[0], pts[1], pts[2], pts[3], t);
+                add(p.x, p.y, 'golden', '黄金分割');
+            }
+        }
+        add(w / 2, h / 2, 'center', '中心');
+        return out;
     }
+    add(0, 0, 'endpoint', '端点');
+    add(w, 0, 'endpoint', '端点');
+    add(w, h, 'endpoint', '端点');
+    add(0, h, 'endpoint', '端点');
     add(w / 2, h / 2, 'center', '中心');
     add(w / 2, 0, 'midpoint', '中点');
     add(w, h / 2, 'midpoint', '中点');

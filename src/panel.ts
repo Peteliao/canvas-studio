@@ -2,14 +2,14 @@
 import type { CanvasElement, Fill, FillMode, GradientStop } from './types';
 import { state } from './state';
 import { $, clamp, cloneStops, finite, setIcon } from './utils';
-import { getEl, selectedEls, makeFill } from './model';
+import { getEl, selectedEls, makeFill, makeStroke } from './model';
 import { fillStops, lineHeightFor } from './style';
-import { setCurveGradientStops, setFillGradientStops, getCurveGradientStops } from './gradeditor';
+import { setCurveGradientStops, setFillGradientStops, getCurveGradientStops, setCurveStrokeGradientStops, getCurveStrokeGradientStops } from './gradeditor';
 import { syncElement, updateTextStats } from './render';
 import { scheduleCommit } from './history';
 import { syncPivotInputs, syncLineStyleSeg, syncWavyDashSeg, updateCurveNodePanel } from './interaction';
 import { refreshStudioUI } from './tools';
-import { syncStyleControls } from './swatches';
+import { syncStyleControls, defaultStrokeStops } from './swatches';
 import { syncPaintStrokeWidth } from './railstroke';
 import { syncShapeParamPanel } from './shapepanel';
 
@@ -54,7 +54,7 @@ export function syncElBackgroundControls(f: Fill): void {
     $('elAngleRow').style.display = f.mode === 'radial' ? 'none' : 'flex';
     $('elPosRow').style.display = (f.mode === 'radial' || f.mode === 'conic') ? 'flex' : 'none';
 }
-/* -------------------- 曲线填充面板（仅闭合路径） -------------------- */
+/* -------------------- 曲线填充 / 描边面板（仅曲线） -------------------- */
 export function syncCurveFillControls(el: CanvasElement | null): void {
     const isCurve = !!(el && el.type === 'curve');
     $('shapeFillControls').style.display = isCurve ? 'none' : 'block';
@@ -74,6 +74,14 @@ export function syncCurveFillControls(el: CanvasElement | null): void {
     $<HTMLInputElement>('curveStrokeEnabled').checked = c.strokeOn !== false;
     $<HTMLInputElement>('curveStrokeColor').value = el.line!.color;
     $('curveStrokeHex').textContent = el.line!.color.toUpperCase();
+    const sg = el.stroke?.gradient || null;
+    $<HTMLSelectElement>('curveStrokePaintMode').value = sg ? sg.mode : 'solid';
+    $('curveStrokeGradientControls').style.display = sg ? 'block' : 'none';
+    $<HTMLInputElement>('curveStrokeGradAngle').value = String(sg ? Math.round(sg.angle) : 45);
+    $<HTMLInputElement>('curveStrokeGradAngleNum').value = String(sg ? Math.round(sg.angle) : 45);
+    $<HTMLInputElement>('curveStrokeGradPosX').value = String(sg ? Math.round(sg.posX) : 50);
+    $<HTMLInputElement>('curveStrokeGradPosY').value = String(sg ? Math.round(sg.posY) : 50);
+    setCurveStrokeGradientStops(sg ? sg.stops : defaultStrokeStops(el.line!.color));
     const grad = f.mode !== 'solid';
     $('curveFillSolidRow').style.display = grad ? 'none' : 'flex';
     $('curveFillGradControls').style.display = grad ? 'block' : 'none';
@@ -112,11 +120,36 @@ export function updateCurveGradientStops(stops: GradientStop[]): void {
 export function updateCurveStroke(): void {
     const el = selectedEls().find(e => e.type === 'curve' && !e.locked);
     if (!el) return;
+    const color = $<HTMLInputElement>('curveStrokeColor').value;
+    const mode = $<HTMLSelectElement>('curveStrokePaintMode').value as FillMode;
     el.curve!.strokeOn = $<HTMLInputElement>('curveStrokeEnabled').checked;
-    el.line!.color = $<HTMLInputElement>('curveStrokeColor').value;
-    $('curveStrokeHex').textContent = el.line!.color.toUpperCase();
+    el.line!.color = color;
+    const prev = el.stroke || makeStroke(null);
+    let gradient = null;
+    if (mode !== 'solid') {
+        const stops = getCurveStrokeGradientStops();
+        gradient = {
+            mode,
+            stops: stops.length >= 2 ? stops : defaultStrokeStops(color),
+            angle: clamp(finite($<HTMLInputElement>('curveStrokeGradAngle').value, 45), 0, 360),
+            posX: clamp(finite($<HTMLInputElement>('curveStrokeGradPosX').value, 50), 0, 100),
+            posY: clamp(finite($<HTMLInputElement>('curveStrokeGradPosY').value, 50), 0, 100)
+        };
+    }
+    el.stroke = Object.assign({}, prev, { color, gradient });
+    $('curveStrokeHex').textContent = color.toUpperCase();
+    $('curveStrokeGradientControls').style.display = gradient ? 'block' : 'none';
     syncElement(el.id);
     scheduleCommit();
+}
+export function updateCurveStrokeGradientStops(stops: GradientStop[]): void {
+    const el = selectedEls().find(e => e.type === 'curve' && !e.locked);
+    if (!el || stops.length < 2) return;
+    const prev = el.stroke || makeStroke(null);
+    const base = prev.gradient || { mode: 'linear' as const, stops: defaultStrokeStops(el.line!.color), angle: 45, posX: 50, posY: 50 };
+    el.stroke = Object.assign({}, prev, { gradient: Object.assign({}, base, { stops: cloneStops(stops) }) });
+    syncElement(el.id);
+    scheduleCommit(120);
 }
 export function updatePropPanel(el: CanvasElement | null): void {
     if (!el) return;

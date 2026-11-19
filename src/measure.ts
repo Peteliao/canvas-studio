@@ -1,7 +1,8 @@
 import { SVG_NS } from './constants';
 import { state } from './state';
-import { $, $opt, clamp, finite, round2 } from './utils';
+import { $, $opt, clamp, finite, iconEl, round2 } from './utils';
 import { getEl, selectedEls } from './model';
+import { toggleSelectionLock } from './selection';
 import { lineHeightFor } from './style';
 import { syncElement } from './render';
 import { getAABB, pivotWorld, rotatorWorld, selectionAABB } from './geometry';
@@ -390,11 +391,26 @@ export function drawMeasure(): void {
         // 延伸线：把尺寸线端点接回物件角点，旋转后也能看清对应哪条边
         sizeExt(`M ${round2(wA0.x)} ${round2(wA0.y)} L ${round2(wA.x)} ${round2(wA.y)} M ${round2(wB0.x)} ${round2(wB0.y)} L ${round2(wB.x)} ${round2(wB.y)}`);
         const tW = rotated ? 0.28 : 0.5;
-        addTag('', d => {
+        const wTag = addTag('', d => {
             tagKey(d, 'W');
             tagVal(d, sizeW, v => measureApplySize('w', v), '宽度');
         }, round2(wA.x + (wB.x - wA.x) * tW), round2(wA.y + (wB.y - wA.y) * tW),
             { mode: 'center', title: '宽度：点击数值可直接修改（↑↓ 微调，Shift 加速）' });
+        if (!locked && !(single && single.type === 'line')) {
+            const lockBtn = document.createElement('button');
+            lockBtn.type = 'button';
+            lockBtn.className = 'measure-lock' + (state.geoRatioLocked ? ' active' : '');
+            lockBtn.title = state.geoRatioLocked ? '已锁定宽高比，点击解锁' : '锁定宽高比';
+            lockBtn.setAttribute('aria-label', state.geoRatioLocked ? '解除宽高比锁定' : '锁定宽高比');
+            lockBtn.appendChild(iconEl(state.geoRatioLocked ? 'link' : 'unlink'));
+            lockBtn.addEventListener('pointerdown', ev => { ev.preventDefault(); ev.stopPropagation(); });
+            lockBtn.addEventListener('click', ev => {
+                ev.preventDefault(); ev.stopPropagation();
+                toggleSelectionLock();
+                drawMeasure();
+            });
+            wTag.appendChild(lockBtn);
+        }
 
         sizeLine(measureDimSeg(hA.x, hA.y, hB.x, hB.y));
         sizeExt(`M ${round2(hA0.x)} ${round2(hA0.y)} L ${round2(hA.x)} ${round2(hA.y)} M ${round2(hB0.x)} ${round2(hB0.y)} L ${round2(hB.x)} ${round2(hB.y)}`);

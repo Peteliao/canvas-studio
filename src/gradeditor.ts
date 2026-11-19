@@ -174,15 +174,17 @@ function mount(host: HTMLElement, onChange: StopsHandler): Editor {
 let fillEd: Editor | null = null;
 let curveEd: Editor | null = null;
 let strokeEd: Editor | null = null;
+let curveStrokeEd: Editor | null = null;
 let inited = false;
 
-export interface GradientEditorHandlers { fill: StopsHandler; curve: StopsHandler; stroke: StopsHandler; }
+export interface GradientEditorHandlers { fill: StopsHandler; curve: StopsHandler; stroke: StopsHandler; curveStroke: StopsHandler; }
 export function initGradientEditors(h: GradientEditorHandlers): void {
     if (inited) return;
     inited = true;
     fillEd = mount($('elGradEditor'), h.fill);
     curveEd = mount($('curveGradEditor'), h.curve);
     strokeEd = mount($('strokeGradEditor'), h.stroke);
+    curveStrokeEd = mount($('curveStrokeGradEditor'), h.curveStroke);
 }
 export function setFillGradientStops(stops: GradientStop[]): void {
     if (!fillEd) return;
@@ -202,6 +204,12 @@ export function setStrokeGradientStops(stops: GradientStop[]): void {
     strokeEd.active = clamp(strokeEd.active, 0, strokeEd.stops.length - 1);
     render(strokeEd);
 }
+export function setCurveStrokeGradientStops(stops: GradientStop[]): void {
+    if (!curveStrokeEd) return;
+    curveStrokeEd.stops = normalizeStops(stops) || defaultStops();
+    curveStrokeEd.active = clamp(curveStrokeEd.active, 0, curveStrokeEd.stops.length - 1);
+    render(curveStrokeEd);
+}
 export function getFillGradientStops(): GradientStop[] {
     return fillEd ? cloneStops(fillEd.stops) : [];
 }
@@ -210,4 +218,7 @@ export function getCurveGradientStops(): GradientStop[] {
 }
 export function getStrokeGradientStops(): GradientStop[] {
     return strokeEd ? cloneStops(strokeEd.stops) : [];
+}
+export function getCurveStrokeGradientStops(): GradientStop[] {
+    return curveStrokeEd ? cloneStops(curveStrokeEd.stops) : [];
 }

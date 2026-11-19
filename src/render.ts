@@ -4,7 +4,7 @@ import type { CanvasElement, TextRun, TextStyle, TextSizeMode } from './types';
 import { state, nodeMap } from './state';
 import { $, iconEl, round2 } from './utils';
 import { getEl, sortedElements, curveFillOn, curveStrokeOn, curvePathD, lineDashArray, curveNodeHasIn, curveNodeHasOut } from './model';
-import { fillToCSS, shapeFilter, strokeOverlayMarkup, wavyDataURI, lineHeightFor } from './style';
+import { fillToCSS, shapeFilter, strokeOverlayMarkup, strokeDefMarkup, wavyDataURI, lineHeightFor } from './style';
 import { fillDefs } from './vector-export';
 import { fontForRun, layoutText } from './exporter';
 import { finishTextEdit } from './richtext';
@@ -249,13 +249,14 @@ export function syncCurveNode(el: CanvasElement, d: HTMLDivElement, h: number): 
         cv.setAttribute('viewBox', `0 0 ${w} ${h}`);
         cv.setAttribute('preserveAspectRatio', 'none');
         const fd = curveFillOn(el) ? fillDefs('cf_' + el.id, el.fill) : null;
+        const sg = curveStrokeOn(el) ? el.stroke?.gradient : null;
         const defs = cv.querySelector('defs');
-        if (defs) defs.innerHTML = fd ? fd.def : '';
+        if (defs) defs.innerHTML = (fd ? fd.def : '') + (sg ? strokeDefMarkup('csg_' + el.id, sg) : '');
         const path = cv.querySelector('path');
         if (path) {
             path.setAttribute('d', curvePathD(c, w, h));
             path.setAttribute('fill', fd ? fd.ref : 'none');
-            path.setAttribute('stroke', ln.color);
+            path.setAttribute('stroke', sg ? `url(#csg_${el.id})` : ln.color);
             path.setAttribute('stroke-width', String(curveStrokeOn(el) ? ln.width : 0));
             path.setAttribute('stroke-linecap', 'round');
             path.setAttribute('stroke-linejoin', 'round');

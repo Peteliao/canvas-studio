@@ -1,5 +1,5 @@
 /* 动作分发（data-act 事件委托）、全局绑定、导出摘要、触屏与可访问性 */
-import { SHORTCUTS, MIN_ZOOM, MAX_ZOOM } from './constants';
+import { SHORTCUTS, MIN_ZOOM, MAX_ZOOM, HEX_RE } from './constants';
 import type { ElementType, TextAlign, ToolName, TabName, BucketSlot } from './types';
 import { state } from './state';
 import { $, $opt, clamp, finite, toast, dialogOk, dialogCancel, downloadBlob } from './utils';
@@ -29,7 +29,7 @@ import { eyedropper, addSwatch, applyHexInput, useColor, applyStyleChange, apply
 import { setLineStyle, setWavyDash, curveOp, clientToWorld } from './interaction';
 import { updateElementColor, updateCanvasBg, toggleElBgMode, updateElementBackground, updateElementOpacity, updateElementRadius, updateLineStyle, toggleBgMode } from './styles';
 import { updateCurveFill, updateCurveStroke } from './panel';
-import { openBucketPicker, hideBucketHover, bucketEditsSelection, commitBucketPicker, previewBucketPicker, bindPaintPopoverControls } from './bucket';
+import { openBucketPicker, hideBucketHover, bucketEditsSelection, commitBucketPicker, previewBucketPicker, bindPaintPopoverControls, setBucketColor, bucketSlotLabel } from './bucket';
 import { addImage, handleImageUpload } from './image';
 import { saveSettings } from './db';
 import { syncTransform } from './render';
@@ -37,6 +37,23 @@ import { bindShapeParamControls } from './shapepanel';
 import { isInputActive } from './shortcuts';
 
 type ActionFn = (arg?: string, node?: HTMLElement, e?: Event) => void;
+
+async function pickScreenColor(): Promise<void> {
+    const ED = window.EyeDropper;
+    if (typeof ED !== 'function') {
+        toast('当前浏览器不支持屏幕吸管，请使用检查器中的取色器或色板', 'error');
+        return;
+    }
+    try {
+        const result = await new ED().open();
+        if (!result || !HEX_RE.test(result.sRGBHex)) return;
+        const slot = state.bucketSlot || 'fill';
+        useColor(result.sRGBHex);
+        setBucketColor(slot, result.sRGBHex);
+        setTool('bucket');
+        toast(`已吸取 ${result.sRGBHex.toUpperCase()}，颜料桶当前涂${bucketSlotLabel(slot)}色`, 'success');
+    } catch { /* 用户取消 */ }
+}
 
 export const ACTIONS: Record<string, ActionFn> = {
     undo: () => undo(),
@@ -93,6 +110,7 @@ export const ACTIONS: Record<string, ActionFn> = {
     showAbout: () => showAbout(),
     runSelfTest: () => runSelfTest(),
     eyedropper: () => { void eyedropper(); },
+    pickScreenColor: () => { void pickScreenColor(); },
     addSwatch: () => addSwatch(),
     toggleCard: arg => toggleCard(arg!),
     setLineStyle: arg => setLineStyle(arg!),
@@ -214,6 +232,17 @@ export function bindDelegates(): void {
         curveFillAlpha: () => updateCurveFill(),
         curveStrokeEnabled: () => updateCurveStroke(),
         curveStrokeColor: () => updateCurveStroke(),
+        curveStrokePaintMode: () => updateCurveStroke(),
+        curveStrokeGradAngle: () => {
+            $<HTMLInputElement>('curveStrokeGradAngleNum').value = $<HTMLInputElement>('curveStrokeGradAngle').value;
+            updateCurveStroke();
+        },
+        curveStrokeGradAngleNum: () => {
+            $<HTMLInputElement>('curveStrokeGradAngle').value = $<HTMLInputElement>('curveStrokeGradAngleNum').value;
+            updateCurveStroke();
+        },
+        curveStrokeGradPosX: () => updateCurveStroke(),
+        curveStrokeGradPosY: () => updateCurveStroke(),
         exportFormat: () => updateExportSummary(),
         exportScope: () => updateExportSummary(),
         exportQuality: () => { $('exportQualityVal').textContent = $<HTMLInputElement>('exportQuality').value; updateExportSummary(); },

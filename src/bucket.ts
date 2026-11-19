@@ -334,7 +334,10 @@ export function applyBucketColor(el: CanvasElement | null, target: BucketSlot, c
             el.curve!.strokeOn = false;
         } else {
             el.line!.color = color;
-            if (el.type === 'curve') el.curve!.strokeOn = true;
+            if (el.type === 'curve') {
+                el.curve!.strokeOn = true;
+                el.stroke = makeStroke(Object.assign({}, el.stroke, { color, gradient: null }));
+            }
         }
     } else if (stroke && el.type === 'text') {
         if (none) return false;   // 文本没有描边概念

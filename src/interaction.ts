@@ -3,7 +3,7 @@ import { SVG_NS, LINE_STYLES } from './constants';
 import type { CanvasElement, CurveNode, Point, Interaction, LineStyle, StrokeStyle, HandleSide, PenDraft, SnapPoint } from './types';
 import { state, nodeMap } from './state';
 import { $, clamp, round2, round3, toast } from './utils';
-import { getEl, selectedEls, sortedElements, buildElement, makeLine, makeCurve, curveSegPts, cubicAt, splitCubic, curveNodeHasIn, curveNodeHasOut, curveLocalBox, curveNodesBox } from './model';
+import { getEl, selectedEls, sortedElements, buildElement, makeLine, makeCurve, curveSegPts, cubicAt, splitCubic, curveNodeHasIn, curveNodeHasOut, curveLocalBox, curveNodesBox, curveFillOn } from './model';
 import { lineHeightFor } from './style';
 import { syncElement, renderAll, applySelectionClasses, syncTransform } from './render';
 import { commit } from './history';
@@ -325,6 +325,28 @@ function isChromeUI(target: HTMLElement): boolean {
         target.closest('.modal') || target.closest('.toast') || target.closest('.ruler') ||
         target.closest('.measure-tag') || target.closest('.guide-ctrl')));
 }
+/** 物件在点击位置是否有可见主体；无填充的图形只保留描边命中区，内部可穿透到下层 */
+function elementHasBody(el: CanvasElement): boolean {
+    if (el.type === 'line' || el.type === 'text') return true;
+    if (el.type === 'curve') return curveFillOn(el);
+    if (el.image || el.maskAssetId) return true;
+    return el.fill.enabled && (el.fill.alpha === undefined || el.fill.alpha > 0.001);
+}
+/** 从当前点击的透明物件向下寻找第一个有可见主体的物件 */
+function elementBelowAt(d: HTMLElement, clientX: number, clientY: number): HTMLElement | null {
+    if (typeof document.elementsFromPoint !== 'function') return null;
+    let passedSelf = false;
+    for (const n of document.elementsFromPoint(clientX, clientY)) {
+        const c = n.closest<HTMLElement>('.canvas-element');
+        if (!c) continue;
+        if (c === d) { passedSelf = true; continue; }
+        if (!passedSelf) continue;
+        const el = getEl(c.dataset.id || '');
+        if (!el || !el.visible || !elementHasBody(el)) continue;
+        return c;
+    }
+    return null;
+}
 function onPointerDown(e: PointerEvent): void {
     if (e.button !== 0) return;
     clearAnchorHover();
@@ -407,7 +429,14 @@ function onPointerDown(e: PointerEvent): void {
     const pivotH = target.closest('.pivot-handle');
     const ctrlH = target.closest('.curve-ctrl');
     const nodeH = target.closest('.curve-node');
-    const d = target.closest('.canvas-element');
+    let d = target.closest<HTMLElement>('.canvas-element');
+    if (d && state.tool === 'select' && target === d) {
+        const hitEl = getEl(d.getAttribute('data-id') || '');
+        if (hitEl && !elementHasBody(hitEl)) {
+            const below = elementBelowAt(d, e.clientX, e.clientY);
+            if (below) d = below;
+        }
+    }
 
     if (pivotH && d) {
         const el = getEl(d.getAttribute('data-id') || '');
@@ -583,10 +612,14 @@ function onPointerMove(e: PointerEvent | null): void {
         box.style.left = left + 'px'; box.style.top = top + 'px';
         box.style.width = w + 'px'; box.style.height = h + 'px';
         const rect = { left, top, right: left + w, bottom: top + h };
+        // 左→右：完全落在框内才选中；右→左：接触即选中
+        const containOnly = cur.x >= it.start.x;
         let ids = it.initial.slice();
         (state.boxCache || []).forEach(o => {
             const a = o.a;
-            const hit = !(rect.right < a.left || rect.left > a.right || rect.bottom < a.top || rect.top > a.bottom);
+            const hit = containOnly
+                ? (a.left >= rect.left && a.right <= rect.right && a.top >= rect.top && a.bottom <= rect.bottom)
+                : !(rect.right < a.left || rect.left > a.right || rect.bottom < a.top || rect.top > a.bottom);
             if (!hit) return;
             if (it.subtractive) ids = ids.filter(id => id !== o.id);
             else if (!ids.includes(o.id)) ids.push(o.id);
@@ -662,9 +695,22 @@ function onPointerMove(e: PointerEvent | null): void {
         if (right - left < 8) { if (it.dir.includes('w')) left = right - 8; else right = left + 8; }
         if (bottom - top < 8) { if (it.dir.includes('n')) top = bottom - 8; else bottom = top + 8; }
         let sx = (right - left) / Math.max(1, b.w), sy = (bottom - top) / Math.max(1, b.h);
-        if (e.shiftKey) { const s = Math.max(sx, sy); sx = s; sy = s; }
-        const ax = it.dir.includes('w') ? b.right : b.left;
-        const ay = it.dir.includes('n') ? b.bottom : b.top;
+        const ratioLocked = state.geoRatioLocked;
+        if (ratioLocked) {
+            // 锁定比例：角手柄取主方向统一缩放；边手柄以另一轴居中对齐
+            const hasX = it.dir.includes('w') || it.dir.includes('e');
+            const hasY = it.dir.includes('n') || it.dir.includes('s');
+            const s = hasX && hasY ? Math.max(sx, sy) : hasX ? sx : sy;
+            sx = s; sy = s;
+        } else if (e.shiftKey) {
+            const s = Math.max(sx, sy); sx = s; sy = s;
+        }
+        const ax = ratioLocked
+            ? (it.dir.includes('w') ? b.right : it.dir.includes('e') ? b.left : (b.left + b.right) / 2)
+            : (it.dir.includes('w') ? b.right : b.left);
+        const ay = ratioLocked
+            ? (it.dir.includes('n') ? b.bottom : it.dir.includes('s') ? b.top : (b.top + b.bottom) / 2)
+            : (it.dir.includes('n') ? b.bottom : b.top);
         it.items.forEach(o => {
             const el = getEl(o.id); if (!el) return;
             el.x = round2(ax + (o.x - ax) * sx);
@@ -674,7 +720,7 @@ function onPointerMove(e: PointerEvent | null): void {
             syncElement(el.id);
         });
         if (it.items.length === 1) syncGeoInputs(getEl(it.items[0].id));
-        showSizeTooltip(e.clientX, e.clientY, Math.round((right - left)), Math.round((bottom - top)));
+        showSizeTooltip(e.clientX, e.clientY, Math.round(b.w * sx), Math.round(b.h * sy));
         drawMeasure();
         return;
     }
