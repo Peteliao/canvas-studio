@@ -1,5 +1,5 @@
 /* DOM 渲染层：模型 → 画布节点 */
-import { SVG_NS, CLIP_PATHS, STROKE_SVG_TYPES } from './constants';
+import { SVG_NS, STROKE_SVG_TYPES } from './constants';
 import type { CanvasElement, TextRun, TextStyle, TextSizeMode } from './types';
 import { state, nodeMap } from './state';
 import { $, iconEl, round2 } from './utils';
@@ -10,6 +10,7 @@ import { fontForRun, layoutText } from './exporter';
 import { finishTextEdit } from './richtext';
 import { renderPenDraft } from './interaction';
 import { refreshStudioPanels, onViewChanged } from './tools';
+import { shapeClipPath } from './shapes';
 
 export function buildNode(el: CanvasElement): HTMLDivElement {
     const d = document.createElement('div');
@@ -185,8 +186,9 @@ export function syncNode(el: CanvasElement, d: HTMLDivElement): void {
     const ss = shape.style;
     ss.cssText = '';
     ss.width = '100%'; ss.height = '100%';
-    ss.borderRadius = el.type === 'circle' ? '50%' : el.borderRadius + 'px';
-    if (CLIP_PATHS[el.type]) ss.clipPath = CLIP_PATHS[el.type];
+    const clip = shapeClipPath(el);
+    ss.borderRadius = el.type === 'circle' ? (clip ? '0' : '50%') : el.borderRadius + 'px';
+    if (clip) ss.clipPath = clip;
 
     if (el.type === 'line') {
         const ln = el.line!;

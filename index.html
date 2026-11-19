@@ -289,20 +289,12 @@
         <div class="rail-menu rail-menu-lines" id="railLineMenu" role="menu" aria-label="线条工具" hidden></div>
         <button class="rail-btn" id="railBucket" data-act="setTool" data-arg="bucket" title="颜料桶 (B)：点内部改填充、点边缘改描边；按住拖动连续上色，Shift 强制描边，Alt+点击吸色"><svg class="ic"><use href="#i-bucket"/></svg><span>填色</span></button>
         <div class="rail-color-card" id="bucketColorCard">
-          <button class="rail-color-slot active" id="bucketFillSlot" title="填充色：点此选色" aria-label="填充色">
+          <button class="rail-color-slot active" id="bucketFillSlot" title="填充：点此打开设置" aria-label="填充设置">
             <span class="rail-color-chip" id="bucketFillChip" aria-hidden="true"></span><span>填充</span>
           </button>
-          <button class="rail-color-slot" id="bucketStrokeSlot" title="描边色：点此选色" aria-label="描边色">
+          <button class="rail-color-slot" id="bucketStrokeSlot" title="描边：点此打开设置" aria-label="描边设置">
             <span class="rail-color-chip" id="bucketStrokeChip" aria-hidden="true"></span><span>描边</span>
           </button>
-          <div class="rail-stroke-row disabled" id="railStrokeRow" title="选中物件后可调整描边粗细">
-            <div class="rail-stroke-head"><span>粗细</span><span id="railStrokeWidthVal">—</span></div>
-            <input type="range" id="railStrokeWidth" min="0" max="30" step="1" value="0" aria-label="描边粗细" title="选中物件后可调整描边粗细" disabled>
-          </div>
-          <div class="rail-none-row">
-            <button class="rail-color-none" id="bucketNoneFill" title="无填充：去掉选中物件的填充" aria-label="无填充">无填充</button>
-            <button class="rail-color-none" id="bucketNoneStroke" title="无描边：去掉选中物件的描边" aria-label="无描边">无描边</button>
-          </div>
           <input type="color" class="bucket-color-hidden" id="bucketColorInput" value="#4f6bff" tabindex="-1" aria-hidden="true">
         </div>
         <button class="rail-btn" id="railText" data-act="setTool" data-arg="text" title="文本工具 (T)：在画布点击或拖拽框创建文本"><svg class="ic"><use href="#i-font"/></svg><span>文本</span></button>
@@ -332,6 +324,30 @@
     <div class="bucket-hover" id="bucketHover" aria-hidden="true">
       <span class="bucket-hover-chip" id="bucketHoverChip"></span>
       <span id="bucketHoverText">填充</span>
+    </div>
+
+    <!-- 填充/描边设置弹窗：点击左侧色槽打开 -->
+    <div class="paint-pop" id="paintPopover" role="dialog" aria-label="填充与描边设置" hidden>
+      <div class="paint-pop-head">
+        <span id="paintPopTitle">填充</span>
+        <button class="paint-pop-close" id="paintPopClose" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="paint-pop-current">
+        <span class="paint-pop-chip" id="paintPopChip" aria-hidden="true"></span>
+        <span class="paint-pop-hex" id="paintPopHex">#4F6BFF</span>
+        <button class="paint-pop-pick" id="paintPopPick" type="button">选择颜色…</button>
+      </div>
+      <div class="paint-pop-swatches" id="paintPopSwatches"></div>
+      <button class="paint-pop-none" id="paintPopNone" type="button">无填充</button>
+      <div class="paint-pop-width" id="paintPopWidth">
+        <div class="paint-pop-width-head">
+          <span>描边粗细</span>
+          <input type="number" id="paintPopWidthNum" class="num-mini" min="0" max="30" step="1" value="0" aria-label="描边粗细数值">
+          <span class="unit">px</span>
+        </div>
+        <input type="range" id="paintPopWidthRange" min="0" max="30" step="1" value="0" aria-label="描边粗细">
+        <div class="paint-pop-hint" id="paintPopWidthHint">选中物件后可调整</div>
+      </div>
     </div>
 
     <!-- 右侧检查器 -->
@@ -383,6 +399,15 @@
                   <button class="lock-btn-small" data-act="resetPivot" title="旋转中心复位到元素正中（也可双击画布上的琥珀色准星）" aria-label="复位旋转中心"><svg class="ic"><use href="#i-center"/></svg></button>
                 </div>
                 <label class="switch-row"><input type="checkbox" id="chkExportVisible"><span>参与导出</span></label>
+              </div>
+            </section>
+
+            <!-- 形状特征参数（随选中形状动态生成） -->
+            <section class="panel-card collapsible" id="shapeParamCard" style="display:none;">
+              <div class="card-head" data-act="toggleCard" data-arg="shapeParamCard"><span><svg class="ic"><use href="#i-star"/></svg> 形状参数</span><svg class="ic ic-sm chev"><use href="#i-chevron"/></svg></div>
+              <div class="card-body">
+                <div class="shape-param-hint" id="shapeParamHint"></div>
+                <div id="shapeParamRows"></div>
               </div>
             </section>
 

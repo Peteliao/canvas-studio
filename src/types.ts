@@ -78,6 +78,7 @@ export interface CanvasElement {
     exportVisible: boolean;
     opacity: number;
     borderRadius: number;
+    shapeParams: Record<string, number>;
     fill: Fill;
     text: TextStyle | null;
     line: LineSpec | null;

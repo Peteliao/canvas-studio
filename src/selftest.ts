@@ -1,12 +1,13 @@
 /* 内置自检 */
 import { VERSION, DB_NAME, HEX_RE, SHADOW_PRESETS, POLYGON_POINTS, CLIP_PATHS, VECTOR_SHAPE_PRESETS } from './constants';
-import type { CanvasElement, AABB } from './types';
+import type { CanvasElement, AABB, ElementType } from './types';
 import { state } from './state';
 import { $, iconEl } from './utils';
 import { validateProject, snapshotJSON, makeFill, makeLine, makeStroke, makeShadow, makeText, buildElement, validateElement,
     curvePathD, curveFillOn, curveStrokeOn, validateGuide, curveSegPts, splitCubic, cubicAt, sortedElements } from './model';
 import { fillToCSS, shapeFilter, lineHeightFor, wavyDashSpec, wavyDataURI, strokeOverlayMarkup } from './style';
 import { buildSVG, buildPDF } from './vector-export';
+import { SHAPE_PARAM_SPECS, shapePoints, shapeClipPath, sanitizeShapeParams } from './shapes';
 import { getAABB, setPivot } from './geometry';
 import { textMeasureCtx, canvasTextWidth, applyAutoSize } from './render';
 import { layoutText, exportBoundsFor } from './exporter';
@@ -165,6 +166,38 @@ export function runSelfTest(): void {
         const svg = buildSVG({ bounds: { x: 0, y: 0, w: heart.w, h: heart.h }, elements: [heart], transparent: true });
         assert(svg.includes('<polygon'), 'SVG 导出缺少多边形');
         return VECTOR_SHAPE_PRESETS.length + ' 种矢量形状 · 渲染/导出可用';
+    });
+    check('形状参数（16 种）', () => {
+        const types: ElementType[] = ['rect', 'circle', 'triangle', 'star', 'hexagon', 'pentagon', 'diamond', 'trapezoid',
+            'parallelogram', 'cross', 'semicircle', 'heart', 'cloud', 'moon', 'speech', 'drop'];
+        const probes: Partial<Record<ElementType, Record<string, number>>> = {
+            circle: { sweep: 180 }, triangle: { apex: 75 }, star: { points: 7, inner: 50 },
+            hexagon: { sides: 8 }, pentagon: { sides: 8 }, diamond: { waist: 65 }, trapezoid: { top: 30 },
+            parallelogram: { slant: 40 }, cross: { arm: 45 }, semicircle: { arch: 70 }, heart: { cleft: 40 },
+            cloud: { puff: 120 }, moon: { thickness: 130 }, speech: { tail: 70, tailSize: 130 }, drop: { tip: 80 }
+        };
+        types.forEach(t => assert(SHAPE_PARAM_SPECS[t] && SHAPE_PARAM_SPECS[t]!.length > 0, t + ' 缺少参数规格'));
+        assert(SHAPE_PARAM_SPECS.rect![0].key === 'corner', '矩形参数应为圆角');
+        Object.entries(probes).forEach(([t, params]) => {
+            const el = buildElement(t as ElementType, 0, 0);
+            Object.entries(params).forEach(([key, v]) => {
+                const before = JSON.stringify(shapePoints(el));
+                el.shapeParams[key] = v;
+                assert(JSON.stringify(shapePoints(el)) !== before, t + '.' + key + ' 未改变轮廓');
+            });
+            assert(!!shapeClipPath(el), t + ' 参数化后缺少 clip-path');
+            const [key, v] = Object.entries(params)[0];
+            const round = validateElement(JSON.parse(JSON.stringify(el)));
+            assert(round.shapeParams[key] === v, t + ' 参数存档往返丢失');
+        });
+        const clean = sanitizeShapeParams('star', { points: 99, inner: -10, bomb: 1 });
+        assert(clean.points === 20 && clean.inner === 5 && !('bomb' in clean), '参数清洗异常');
+        const star = buildElement('star', 0, 0);
+        star.shapeParams = { points: 7, inner: 40 };
+        const svg = buildSVG({ bounds: { x: 0, y: 0, w: star.w, h: star.h }, elements: [star], transparent: true });
+        const m = /<polygon points="([^"]+)"/.exec(svg);
+        assert(m && m[1].trim().split(/\s+/).length === 14, 'SVG 星形顶点数异常');
+        return types.length + ' 种 · 实时轮廓 · 存档/导出一致';
     });
     check('文本换行与自动尺寸', () => {
         const el = buildElement('text', 0, 0);

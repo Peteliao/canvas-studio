@@ -1,12 +1,14 @@
-import { HEX_RE } from './constants';
+import { HEX_RE, PRESET_COLORS } from './constants';
 import { state, nodeMap } from './state';
-import { $opt, finite, toast } from './utils';
+import { $opt, clamp, finite, toast } from './utils';
 import { getEl, makeStroke, curveFillOn, curveStrokeOn, selectedEls } from './model';
 import { hexToRgba } from './style';
 import { syncElement } from './render';
 import { saveSettings } from './db';
 import { commit, scheduleCommit } from './history';
 import { clientToWorld, worldToLocalPoint } from './interaction';
+import { syncPaintStrokeWidth, applyPaintStrokeWidth } from './railstroke';
+import { updateUI } from './panel';
 import type { BucketSlot, CanvasElement } from './types';
 
 const BUCKET_FILL_DEFAULT = '#4f6bff', BUCKET_STROKE_DEFAULT = '#1c2230';
@@ -41,20 +43,151 @@ export function bucketEditsSelection(): boolean {
 }
 
 let pickerEditsSelection = false;
+let paintAnchor: HTMLElement | null = null;
 
-/** 为指定色槽打开隐藏的原生取色器；editsSelection 表示确认后应用到选中物件 */
-export function openBucketPicker(slot?: BucketSlot, editsSelection = false): void {
+export function isPaintPopoverOpen(): boolean {
+    const p = $opt('paintPopover');
+    return !!p && !p.hidden;
+}
+
+export function closePaintPopover(): void {
+    const p = $opt('paintPopover');
+    if (p) p.hidden = true;
+    paintAnchor?.classList.remove('popover-open');
+    paintAnchor = null;
+}
+
+function ensurePaintSwatches(): void {
+    const box = $opt('paintPopSwatches');
+    if (!box || box.childElementCount) return;
+    PRESET_COLORS.slice(0, 14).forEach(c => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'paint-pop-swatch';
+        b.dataset.paintColor = c;
+        b.style.background = c;
+        b.title = c.toUpperCase();
+        b.setAttribute('aria-label', '颜色 ' + c.toUpperCase());
+        box.appendChild(b);
+    });
+}
+
+export function syncPaintPopover(): void {
+    const p = $opt('paintPopover');
+    if (!p || p.hidden) return;
+    const slot = state.bucketSlot || 'fill';
+    const label = bucketSlotLabel(slot);
+    const color = bucketColor(slot);
+    const title = $opt('paintPopTitle'), hex = $opt('paintPopHex');
+    const chip = $opt('paintPopChip'), none = $opt<HTMLButtonElement>('paintPopNone');
+    const width = $opt('paintPopWidth');
+    if (title) title.textContent = label + '设置';
+    if (hex) hex.textContent = color === 'none' ? '无' + label : color.toUpperCase();
+    if (chip) {
+        chip.style.background = color === 'none' ? '' : color;
+        chip.classList.toggle('none', color === 'none');
+    }
+    if (none) {
+        none.textContent = '无' + label;
+        none.classList.toggle('active', color === 'none');
+        none.title = bucketEditsSelection()
+            ? '去掉选中物件的' + label
+            : '把' + label + '色槽设为“无”，颜料桶不再涂' + label;
+    }
+    const sw = $opt('paintPopSwatches');
+    if (sw) {
+        sw.querySelectorAll<HTMLElement>('[data-paint-color]').forEach(b => {
+            b.classList.toggle('active', b.dataset.paintColor === color);
+        });
+    }
+    if (width) width.hidden = slot !== 'stroke';
+    if (slot === 'stroke') syncPaintStrokeWidth();
+}
+
+/** 点击左侧色槽：打开自定义设置弹窗（颜色 / 无填充无描边 / 描边粗细） */
+export function openBucketPicker(slot: BucketSlot = 'fill', editsSelection = false, anchor?: HTMLElement | null): void {
+    const p = $opt('paintPopover');
+    if (!p) return;
+    const nextAnchor = anchor || $opt(slot === 'stroke' ? 'bucketStrokeSlot' : 'bucketFillSlot');
+    const same = !p.hidden && paintAnchor === nextAnchor && state.bucketSlot === slot;
+    state.bucketSlot = slot;
+    pickerEditsSelection = editsSelection;
+    if (same) { closePaintPopover(); return; }
+    paintAnchor?.classList.remove('popover-open');
+    paintAnchor = nextAnchor;
+    paintAnchor?.classList.add('popover-open');
+    ensurePaintSwatches();
+    p.hidden = false;
+    syncBucketSwatch();
+    const r = paintAnchor?.getBoundingClientRect();
+    const pw = p.offsetWidth || 222, ph = p.offsetHeight || 260;
+    const left = clamp((r ? r.right + 10 : 76), 8, Math.max(8, window.innerWidth - pw - 8));
+    const top = clamp((r ? r.top - 6 : 120), 8, Math.max(8, window.innerHeight - ph - 8));
+    p.style.left = Math.round(left) + 'px';
+    p.style.top = Math.round(top) + 'px';
+}
+
+/** 弹窗中的“选择颜色…”：打开原生取色器，保留弹窗 */
+export function openNativePaintPicker(): void {
     const input = $opt<HTMLInputElement>('bucketColorInput');
     if (!input) return;
-    pickerEditsSelection = editsSelection;
-    state.bucketSlot = slot || 'fill';
-    const cur = bucketColor(state.bucketSlot);
-    input.value = cur === 'none' ? (state.bucketSlot === 'stroke' ? BUCKET_STROKE_DEFAULT : BUCKET_FILL_DEFAULT) : cur;
-    syncBucketSwatch();
+    const slot = state.bucketSlot || 'fill';
+    const cur = bucketColor(slot);
+    input.value = cur === 'none' ? (slot === 'stroke' ? BUCKET_STROKE_DEFAULT : BUCKET_FILL_DEFAULT) : cur;
     if (typeof input.showPicker === 'function') {
         try { input.showPicker(); return; } catch { /* 回退到 click */ }
     }
     input.click();
+}
+
+/** 弹窗色板：立即应用到选中物件或当前色槽 */
+export function applyPaintColorNow(color: string): void {
+    if (!HEX_RE.test(color)) return;
+    const slot = state.bucketSlot || 'fill';
+    if (pickerEditsSelection && bucketEditsSelection()) applySlotToSelection(slot, color);
+    else setBucketColor(slot, color);
+}
+
+/** 弹窗“无填充/无描边”：编辑选中物件或把色槽设为无 */
+export function applyPaintNone(): void {
+    const slot = state.bucketSlot || 'fill';
+    if (pickerEditsSelection && bucketEditsSelection()) {
+        const changed = applySlotToSelection(slot, 'none');
+        toast(changed ? '已去除选中物件的' + bucketSlotLabel(slot) : '选中物件没有可去除的' + bucketSlotLabel(slot), changed ? 'success' : 'error');
+    } else {
+        setBucketColor(slot, 'none');
+        toast('色槽已设为无' + bucketSlotLabel(slot), 'success');
+    }
+}
+
+export function bindPaintPopoverControls(): void {
+    ensurePaintSwatches();
+    $opt('paintPopPick')?.addEventListener('click', () => openNativePaintPicker());
+    $opt('paintPopNone')?.addEventListener('click', () => applyPaintNone());
+    $opt('paintPopClose')?.addEventListener('click', () => closePaintPopover());
+    $opt('paintPopSwatches')?.addEventListener('click', e => {
+        const b = (e.target as Element).closest<HTMLElement>('[data-paint-color]');
+        if (b && b.dataset.paintColor) applyPaintColorNow(b.dataset.paintColor);
+    });
+    const range = $opt<HTMLInputElement>('paintPopWidthRange');
+    const num = $opt<HTMLInputElement>('paintPopWidthNum');
+    range?.addEventListener('input', () => applyPaintStrokeWidth('range'));
+    num?.addEventListener('input', () => applyPaintStrokeWidth('number'));
+    num?.addEventListener('change', () => applyPaintStrokeWidth('number'));
+    document.addEventListener('pointerdown', e => {
+        const p = $opt('paintPopover');
+        if (!p || p.hidden) return;
+        const t = e.target as Element;
+        if (p.contains(t) || t.closest('#bucketFillSlot, #bucketStrokeSlot')) return;
+        closePaintPopover();
+    });
+    document.addEventListener('keydown', e => {
+        if (e.key !== 'Escape' || !isPaintPopoverOpen()) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        closePaintPopover();
+    }, true);
+    window.addEventListener('resize', () => closePaintPopover());
 }
 
 /** 拖动取色器时实时预览；确认由 commitBucketPicker 落历史并提示 */
@@ -90,6 +223,7 @@ export function applySlotToSelection(slot: BucketSlot, color: string): boolean {
     if (changed) commit();
     setBucketColor(slot, color);
     syncBucketFromSelection();
+    if (changed) updateUI();
     return changed;
 }
 
@@ -99,7 +233,7 @@ export function syncBucketSwatch(): void {
     if (fChip) { fChip.style.background = fill === 'none' ? '' : fill; fChip.classList.toggle('none', fill === 'none'); }
     if (sChip) { sChip.style.background = stroke === 'none' ? '' : stroke; sChip.classList.toggle('none', stroke === 'none'); }
     const fSlot = $opt('bucketFillSlot'), sSlot = $opt('bucketStrokeSlot');
-    const editHint = bucketEditsSelection() ? '：点击修改选中物件' : '：点此选色';
+    const editHint = bucketEditsSelection() ? '：点击打开设置并修改选中物件' : '：点击打开颜色与样式设置';
     if (fSlot) {
         fSlot.title = '填充色 ' + bucketColorLabel('fill') + editHint;
         fSlot.classList.toggle('active', state.bucketSlot !== 'stroke');
@@ -108,15 +242,7 @@ export function syncBucketSwatch(): void {
         sSlot.title = '描边色 ' + bucketColorLabel('stroke') + editHint;
         sSlot.classList.toggle('active', state.bucketSlot === 'stroke');
     }
-    ([['bucketNoneFill', 'fill'], ['bucketNoneStroke', 'stroke']] as [string, BucketSlot][]).forEach(([id, slot]) => {
-        const noneBtn = $opt(id);
-        if (!noneBtn) return;
-        const label = bucketSlotLabel(slot);
-        noneBtn.title = bucketEditsSelection()
-            ? '无' + label + '：去掉选中物件的' + label
-            : '无' + label + '：把' + label + '色槽设为“无”，颜料桶不再涂' + label;
-        noneBtn.classList.toggle('active', bucketColor(slot) === 'none');
-    });
+    syncPaintPopover();
     const btn = $opt('railBucket');
     if (btn) btn.title = '颜料桶 (B)：填充 ' + bucketColorLabel('fill') + ' · 描边 ' + bucketColorLabel('stroke')
         + '；点内部改填充、点边缘改描边，Shift 强制描边，Alt+点击吸色，拖动连续上色';

@@ -38,19 +38,41 @@ export function isTextEntryActive(): boolean {
     }
     return false;
 }
+const FULLWIDTH_DIGITS = '１２３４５';
+/** 兼容中文输入法的 Process/Unidentified 键值、全角数字与小键盘 */
+function measureDigit(e: KeyboardEvent): number | null {
+    const k = e.key;
+    if (k.length === 1) {
+        if (k >= '1' && k <= '5') return Number(k);
+        const i = FULLWIDTH_DIGITS.indexOf(k);
+        return i >= 0 ? i + 1 : null;
+    }
+    if (k !== 'Process' && k !== 'Unidentified' && k !== '') return null;
+    const m = /^(?:Digit|Numpad)([1-5])$/.exec(e.code);
+    if (m) return Number(m[1]);
+    if (e.keyCode >= 49 && e.keyCode <= 53) return e.keyCode - 48;
+    if (e.keyCode >= 97 && e.keyCode <= 101) return e.keyCode - 96;
+    return null;
+}
+
 export function bindHotkeys(): void {
     document.addEventListener('keydown', e => {
         if (isDialogOpen()) {
             if (e.key === 'Escape') { e.preventDefault(); dialogCancel(); }
             return;
         }
+        if (e.isComposing) return;
         const ctrl = e.ctrlKey || e.metaKey;
-        // 数字键 1–5：单独开关五类标注（尺寸 / 边距 / 间距 / 对齐 / 辅助线）
-        // 放在文本拦截之前：颜色/滑块等控件聚焦后也能直接使用；文本输入框与下拉仍保留原生行为
-        if (!ctrl && !e.altKey && !isTextEntryActive() && e.key >= '1' && e.key <= '5' && e.key.length === 1) {
+        // 数字键 1–5（或 Alt+1–5）：开关五类标注（尺寸 / 边距 / 间距 / 对齐 / 辅助线）
+        // 放在文本拦截之前：颜色/滑块等控件聚焦后也能直接使用；输入框内保留普通数字，
+        // 但 Alt+数字 始终生效，避免焦点在数值框时快捷键失效
+        const digit = measureDigit(e);
+        const altToggle = digit !== null && e.altKey && !ctrl && !e.getModifierState('AltGraph');
+        const plainToggle = digit !== null && !e.altKey && !ctrl && !isTextEntryActive();
+        if (digit !== null && (altToggle || plainToggle) && !e.repeat) {
             e.preventDefault();
             const kinds = ['size', 'canvas', 'gap', 'align', 'guide'] as const;
-            const kind = kinds[Number(e.key) - 1];
+            const kind = kinds[digit - 1];
             if (kind) toggleMeasureType(kind);
             return;
         }

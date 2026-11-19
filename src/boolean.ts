@@ -1,5 +1,5 @@
-import { POLYGON_POINTS } from './constants';
 import { state } from './state';
+import { shapePoints } from './shapes';
 import { clamp, deepCopy, round2, toast, uid } from './utils';
 import { buildElement, nextZIndex, selectedEls } from './model';
 import { lineHeightFor } from './style';
@@ -12,7 +12,7 @@ import type { AABB, CanvasElement } from './types';
 
 export function shapePath(ctx: CanvasRenderingContext2D, el: CanvasElement, w: number, h: number): void {
     ctx.beginPath();
-    const pts = POLYGON_POINTS[el.type];
+    const pts = shapePoints(el);
     if (pts) {
         pts.forEach((p, i) => { const x = p[0] / 100 * w, y = p[1] / 100 * h; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
         ctx.closePath();

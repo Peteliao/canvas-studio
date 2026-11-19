@@ -29,11 +29,11 @@ import { eyedropper, addSwatch, applyHexInput, useColor, applyStyleChange, apply
 import { setLineStyle, setWavyDash, curveOp, clientToWorld } from './interaction';
 import { updateElementColor, updateCanvasBg, toggleElBgMode, updateElementBackground, updateElementOpacity, updateElementRadius, updateLineStyle, toggleBgMode } from './styles';
 import { updateCurveFill, updateCurveStroke } from './panel';
-import { openBucketPicker, setBucketColor, hideBucketHover, bucketSlotLabel, bucketEditsSelection, commitBucketPicker, previewBucketPicker, applySlotToSelection } from './bucket';
-import { applyRailStrokeWidth } from './railstroke';
+import { openBucketPicker, hideBucketHover, bucketEditsSelection, commitBucketPicker, previewBucketPicker, bindPaintPopoverControls } from './bucket';
 import { addImage, handleImageUpload } from './image';
 import { saveSettings } from './db';
 import { syncTransform } from './render';
+import { bindShapeParamControls } from './shapepanel';
 import { isInputActive } from './shortcuts';
 
 type ActionFn = (arg?: string, node?: HTMLElement, e?: Event) => void;
@@ -191,7 +191,6 @@ export function bindDelegates(): void {
         letterSpacingInput: () => updateTextStyle('spacing'),
         // V12 新增控件
         strokeColor: () => applyStyleChange(),
-        railStrokeWidth: () => applyRailStrokeWidth(),
         strokeWidth: () => applyStyleChange(),
         strokeStyle: () => applyStyleChange(),
         blendMode: () => applyStyleChange(),
@@ -243,7 +242,7 @@ export function bindDelegates(): void {
 
     ([['bucketFillSlot', 'fill'], ['bucketStrokeSlot', 'stroke']] as [string, BucketSlot][]).forEach(([id, slot]) => {
         const n = $opt(id);
-        if (n) n.addEventListener('click', e => { e.stopPropagation(); openBucketPicker(slot, bucketEditsSelection()); });
+        if (n) n.addEventListener('click', e => { e.stopPropagation(); openBucketPicker(slot, bucketEditsSelection(), n); });
     });
     const bucketColorInput = $opt<HTMLInputElement>('bucketColorInput');
     if (bucketColorInput) {
@@ -251,20 +250,7 @@ export function bindDelegates(): void {
         bucketColorInput.addEventListener('input', () => previewBucketPicker(bucketColorInput.value));
         bucketColorInput.addEventListener('change', () => commitBucketPicker(bucketColorInput.value));
     }
-    ([['bucketNoneFill', 'fill'], ['bucketNoneStroke', 'stroke']] as [string, BucketSlot][]).forEach(([id, slot]) => {
-        const n = $opt(id);
-        if (!n) return;
-        n.addEventListener('click', e => {
-            e.stopPropagation();
-            if (bucketEditsSelection()) {
-                const changed = applySlotToSelection(slot, 'none');
-                toast(changed ? '已去除选中物件的' + bucketSlotLabel(slot) : '选中物件没有可去除的' + bucketSlotLabel(slot), changed ? 'success' : 'error');
-            } else {
-                setBucketColor(slot, 'none');
-                toast('色槽已设为无' + bucketSlotLabel(slot), 'success');
-            }
-        });
-    });
+    bindPaintPopoverControls();
     document.addEventListener('mouseleave', () => { if (state.tool === 'bucket') hideBucketHover(); });
 
     $('imageInput').addEventListener('change', e => { void handleImageUpload(e.target as HTMLInputElement); });
@@ -314,6 +300,7 @@ export function bindDelegates(): void {
     });
     // 菜单触发器（阻止冒泡，避免被全局 click 关闭）
     bindMenus();
+    bindShapeParamControls();
 }
 
 /* -------------------- 触屏与可访问性 -------------------- */

@@ -9,7 +9,8 @@ import { scheduleCommit } from './history';
 import { syncPivotInputs, syncLineStyleSeg, syncWavyDashSeg, updateCurveNodePanel } from './interaction';
 import { refreshStudioUI } from './tools';
 import { syncStyleControls } from './swatches';
-import { syncRailStrokeWidth } from './railstroke';
+import { syncPaintStrokeWidth } from './railstroke';
+import { syncShapeParamPanel } from './shapepanel';
 
 export function showOnly(mode: FillMode): void {
     $('bgSolidControls').style.display = mode === 'solid' ? 'flex' : 'none';
@@ -167,6 +168,7 @@ export function updatePropPanel(el: CanvasElement | null): void {
         $<HTMLSelectElement>('fontWeightInput').value = String(t.fontWeight);
         updateTextStats(el);
     }
+    syncShapeParamPanel(el);
 }
 export function updateUI(): void {
     const n = state.selection.length;
@@ -189,7 +191,7 @@ export function updateUI(): void {
     $('groupTools').style.display = n > 0 ? 'flex' : 'none';
     $('selCountBadge').textContent = String(n);
     refreshStudioUI();
-    syncRailStrokeWidth();
+    syncPaintStrokeWidth();
     if (!n) return;
     const allLocked = selectedEls().every(e => e.locked);
     setIcon($('btnLockToggle'), allLocked ? 'lock' : 'unlock');
@@ -202,6 +204,7 @@ export function updateUI(): void {
         $('textSpecific').style.display = 'none';
         $('appearanceBlock').style.display = 'block';
         $<HTMLSelectElement>('elBgType').disabled = false;
+        syncShapeParamPanel(null);
     }
     syncStyleControls();
 }

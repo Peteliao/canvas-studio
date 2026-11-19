@@ -26,11 +26,11 @@ export function setToggleButton(id: string, on: boolean): void {
 export type MeasureKind = 'size' | 'canvas' | 'gap' | 'align' | 'guide';
 type MeasureKey = 'measureSize' | 'measureCanvas' | 'measureGap' | 'measureAlign' | 'measureGuide';
 const MEASURE_META: Record<MeasureKind, { key: MeasureKey; chip: string; label: string; hot: string }> = {
-    size: { key: 'measureSize', chip: 'statusMeasureSize', label: '尺寸', hot: '1' },
-    canvas: { key: 'measureCanvas', chip: 'statusMeasureCanvas', label: '边距', hot: '2' },
-    gap: { key: 'measureGap', chip: 'statusMeasureGap', label: '间距', hot: '3' },
-    align: { key: 'measureAlign', chip: 'statusMeasureAlign', label: '对齐', hot: '4' },
-    guide: { key: 'measureGuide', chip: 'statusMeasureGuide', label: '辅助线', hot: '5' }
+    size: { key: 'measureSize', chip: 'statusMeasureSize', label: '尺寸', hot: '1 / Alt+1' },
+    canvas: { key: 'measureCanvas', chip: 'statusMeasureCanvas', label: '边距', hot: '2 / Alt+2' },
+    gap: { key: 'measureGap', chip: 'statusMeasureGap', label: '间距', hot: '3 / Alt+3' },
+    align: { key: 'measureAlign', chip: 'statusMeasureAlign', label: '对齐', hot: '4 / Alt+4' },
+    guide: { key: 'measureGuide', chip: 'statusMeasureGuide', label: '辅助线', hot: '5 / Alt+5' }
 };
 
 export function toggleMeasureType(kind: MeasureKind): void {

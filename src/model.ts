@@ -10,6 +10,7 @@ import type {
     TextSizeMode, CurveNodeType, FontWeight, Point, Box
 } from './types';
 import { state, nodeMap } from './state';
+import { sanitizeShapeParams } from './shapes';
 import { dbAvailable } from './db';
 import { clamp, finite, validColor, round2, round3, uid } from './utils';
 
@@ -221,6 +222,7 @@ export function validateElement(raw: unknown): CanvasElement {
         exportVisible: r.exportVisible !== false,
         opacity: clamp(finite(r.opacity, 1), 0, 1),
         borderRadius: clamp(finite(r.borderRadius, 0), 0, 10000),
+        shapeParams: sanitizeShapeParams(type, r.shapeParams),
         fill: makeFill(r.fill),
         text: type === 'text' ? makeText(r.text) : null,
         line,
@@ -344,6 +346,7 @@ export function buildElement(type: ElementType, x: number, y: number): CanvasEle
     const base: Record<string, unknown> = {
         id: uid('el'), type, x, y, w: 200, h: 150, rotation: 0, zIndex: nextZIndex(),
         locked: false, exportVisible: true, opacity: 1, borderRadius: 0,
+        shapeParams: {},
         fill: makeFill({ mode: 'solid', color: '#cccccc' }),
         text: null, line: null, image: null, maskAssetId: null
     };

@@ -1,5 +1,6 @@
 /* 样式计算：填充 CSS、描边/投影滤镜、波浪线几何 */
-import { HEX_RE, SVG_NS, STROKE_SVG_TYPES, POLYGON_POINTS } from './constants';
+import { HEX_RE, SVG_NS, STROKE_SVG_TYPES } from './constants';
+import { shapePoints } from './shapes';
 import type { CanvasElement, Fill, LineSpec } from './types';
 import { clamp, finite, round2 } from './utils';
 
@@ -42,11 +43,11 @@ export function strokeOverlayMarkup(el: CanvasElement, w: number, h: number): st
     const dash = st.style === 'dashed' ? ` stroke-dasharray="${st.width * 3} ${st.width * 2}"`
         : st.style === 'dotted' ? ` stroke-dasharray="0.1 ${st.width * 1.8}" stroke-linecap="round"` : '';
     const attrs = `fill="none" stroke="${st.color}" stroke-width="${st.width}"${dash}`;
-    if (el.type === 'circle') return `<ellipse cx="${w / 2}" cy="${h / 2}" rx="${w / 2}" ry="${h / 2}" ${attrs}/>`;
-    if (POLYGON_POINTS[el.type]) {
-        const pts = POLYGON_POINTS[el.type].map(([x, y]) => `${round2(x * w / 100)},${round2(y * h / 100)}`).join(' ');
-        return `<polygon points="${pts}" stroke-linejoin="round" ${attrs}/>`;
+    const pts = shapePoints(el);
+    if (pts) {
+        return `<polygon points="${pts.map(([x, y]) => `${round2(x * w / 100)},${round2(y * h / 100)}`).join(' ')}" stroke-linejoin="round" ${attrs}/>`;
     }
+    if (el.type === 'circle') return `<ellipse cx="${w / 2}" cy="${h / 2}" rx="${w / 2}" ry="${h / 2}" ${attrs}/>`;
     const rx = Math.min(el.borderRadius, w / 2, h / 2);
     return `<rect x="0" y="0" width="${w}" height="${h}" rx="${rx}" ${attrs}/>`;
 }

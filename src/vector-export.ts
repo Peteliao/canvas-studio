@@ -1,5 +1,5 @@
-import { POLYGON_POINTS } from './constants';
 import { state } from './state';
+import { shapePoints } from './shapes';
 import { finite, round2 } from './utils';
 import { curveFillOn, curvePathD, curveStrokeOn } from './model';
 import { hexToRgba, lineHeightFor, wavyDashSpec, wavyGeom } from './style';
@@ -28,11 +28,12 @@ export function fillDefs(id: string, f: Fill): { def: string; ref: string } {
 function shapeSVG(el: CanvasElement, ref: string): string {
     const st = el.stroke && el.stroke.width > 0
         ? ` stroke="${el.stroke.color}" stroke-width="${el.stroke.width}"${el.stroke.style === 'dashed' ? ' stroke-dasharray="8 5"' : el.stroke.style === 'dotted' ? ' stroke-dasharray="2 4"' : ''}` : '';
-    if (el.type === 'circle') return `<ellipse cx="${el.w / 2}" cy="${el.h / 2}" rx="${el.w / 2}" ry="${el.h / 2}" fill="${ref}"${st}/>`;
-    if (POLYGON_POINTS[el.type]) {
-        const pts = POLYGON_POINTS[el.type].map(([x, y]) => `${x * el.w / 100},${y * el.h / 100}`).join(' ');
+    const dyn = shapePoints(el);
+    if (dyn) {
+        const pts = dyn.map(([x, y]) => `${x * el.w / 100},${y * el.h / 100}`).join(' ');
         return `<polygon points="${pts}" fill="${ref}"${st}/>`;
     }
+    if (el.type === 'circle') return `<ellipse cx="${el.w / 2}" cy="${el.h / 2}" rx="${el.w / 2}" ry="${el.h / 2}" fill="${ref}"${st}/>`;
     return `<rect x="0" y="0" width="${el.w}" height="${el.h}" rx="${el.borderRadius}" fill="${ref}"${st}/>`;
 }
 
