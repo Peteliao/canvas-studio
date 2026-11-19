@@ -7,7 +7,7 @@ import { getEl, selectedEls, sortedElements, buildElement, makeLine, makeCurve, 
 import { lineHeightFor } from './style';
 import { syncElement, renderAll, applySelectionClasses, syncTransform } from './render';
 import { commit } from './history';
-import { viewportRect, setZoom } from './view';
+import { viewportRect, setZoom, showFitFloat } from './view';
 import { getAABB, pivotWorld, selectionAABB, setPivot } from './geometry';
 import { setSelection, deselectAll, toggleSelection } from './selection';
 import { updateUI, updatePropPanel, syncCurveFillControls } from './panel';
@@ -250,6 +250,7 @@ export function initCanvasInteraction(): void {
         const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? viewport.clientHeight : 1;
         const factor = Math.exp(-e.deltaY * unit * 0.0012);
         setZoom(state.zoom * factor, e.clientX, e.clientY);
+        showFitFloat(e.clientX, e.clientY);
     }, { passive: false });
     // 阻止中键触发浏览器自动滚动
     viewport.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
@@ -367,7 +368,8 @@ function isChromeUI(target: HTMLElement): boolean {
         target.closest('.tool-rail') || target.closest('.inspector') || target.closest('.statusbar') ||
         target.closest('.modal') || target.closest('.toast') || target.closest('.ruler') ||
         target.closest('.measure-tag') || target.closest('.guide-ctrl') ||
-        target.closest('.selection-tools') || target.closest('.style-brush-menu')));
+        target.closest('.selection-tools') || target.closest('.style-brush-menu') ||
+        target.closest('.shape-convert-menu') || target.closest('.fit-float')));
 }
 /** 物件在点击位置是否有可见主体；无填充的图形只保留描边命中区，内部可穿透到下层 */
 function elementHasBody(el: CanvasElement): boolean {
@@ -658,7 +660,9 @@ function onPointerMove(e: PointerEvent | null): void {
         state.pan.x += e.clientX - it.lastX;
         state.pan.y += e.clientY - it.lastY;
         it.lastX = e.clientX; it.lastY = e.clientY;
-        syncTransform(); return;
+        syncTransform();
+        showFitFloat(e.clientX, e.clientY);
+        return;
     }
     if (it.kind === 'textcreate') {
         const cur = clientToWorld(e.clientX, e.clientY);

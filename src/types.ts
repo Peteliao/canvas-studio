@@ -6,6 +6,7 @@ export type ElementType = 'rect' | 'circle' | 'triangle' | 'star' | 'arrow' | 'l
 export type FillMode = 'solid' | 'linear' | 'radial' | 'conic';
 export type LineStyle = 'solid' | 'dashed' | 'dotted' | 'wavy';
 export type StrokeStyle = 'solid' | 'dashed' | 'dotted';
+export type StrokeAlign = 'outside' | 'center' | 'inside';
 export type ShadowType = 'drop' | 'glow';
 export type TextAlign = 'left' | 'center' | 'right' | 'justify';
 export type TextSizeMode = 'fixed' | 'autoH' | 'autoWH';
@@ -42,7 +43,7 @@ export interface StrokeGradient {
     posX: number;
     posY: number;
 }
-export interface Stroke { color: string; width: number; style: StrokeStyle; gradient: StrokeGradient | null; }
+export interface Stroke { color: string; width: number; style: StrokeStyle; align: StrokeAlign; gradient: StrokeGradient | null; }
 export interface Shadow { enabled: boolean; type: ShadowType; color: string; x: number; y: number; blur: number; opacity: number; }
 export interface TextRun { text: string; bold: boolean; italic: boolean; underline: boolean; color: string; }
 export interface TextStyle {
@@ -52,6 +53,10 @@ export interface TextStyle {
     fontWeight: FontWeight;
     lineHeight: number;
     letterSpacing: number;
+    /** 段落间距（px），作用于每个段落之后 */
+    paraSpacing: number;
+    /** 段落首行缩进（px） */
+    indent: number;
     align: TextAlign;
     sizeMode: TextSizeMode;
 }
@@ -75,7 +80,7 @@ export interface ImageRef { assetId: string; originalAssetId: string; crop: Crop
 
 /** 导出排版：行模型（编辑器自动尺寸与 PNG/SVG 导出共用） */
 export interface TextToken { run: TextRun; text: string; w: number; }
-export type TextLine = TextToken[] & { forcedEnd?: boolean };
+export type TextLine = TextToken[] & { forcedEnd?: boolean; paraStart?: boolean };
 
 export interface CanvasElement {
     id: string;

@@ -100,6 +100,12 @@
   <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4"/></symbol>
   <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
   <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+  <symbol id="i-convert" viewBox="0 0 24 24"><path d="M3.5 4.5h8v8h-8z" opacity=".35"/><path d="M10.5 11.5h10l-3 8h-10z"/></symbol>
+  <symbol id="i-sa-outside" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1" stroke-dasharray="2 2" opacity=".45" stroke-width="1"/><rect x="2.5" y="2.5" width="19" height="19" rx="1.5" stroke-width="3"/></symbol>
+  <symbol id="i-sa-center" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1" stroke-dasharray="2 2" opacity=".45" stroke-width="1"/><rect x="4" y="4" width="16" height="16" rx="1.5" stroke-width="3"/></symbol>
+  <symbol id="i-sa-inside" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1" stroke-dasharray="2 2" opacity=".45" stroke-width="1"/><rect x="5.5" y="5.5" width="13" height="13" rx="1.5" stroke-width="3"/></symbol>
+  <symbol id="i-paragraph" viewBox="0 0 24 24"><path d="M13 4H8a4 4 0 0 0 0 8h5M13 4v16M16 4v16M8 16h8" stroke-width="1.6"/></symbol>
+  <symbol id="i-indent" viewBox="0 0 24 24"><path d="M4 4h16M10 9h10M10 15h10M4 20h16M4 9l4 3-4 3"/></symbol>
   <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3 12V4h8l9 9-8 8z"/><circle cx="7.5" cy="7.5" r="1.2"/></symbol>
   <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
   <symbol id="i-clipboard" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6"/></symbol>
@@ -118,7 +124,7 @@
     <div class="brand">
       <span class="brand-mark"><svg class="ic"><use href="#i-sparkle"/></svg></span>
       <span class="brand-name">Canvas <b>Studio</b></span>
-      <span class="brand-version">v13</span>
+      <span class="brand-version">v14</span>
     </div>
 
     <nav class="menubar" aria-label="主菜单">
@@ -331,10 +337,14 @@
         <div class="pen-layer" id="penLayer"></div>
         <div class="measure-layer" id="measureLayer"></div>
         <div class="selection-tools" id="selectionTools" role="toolbar" aria-label="选中物件快捷操作" hidden>
+          <button type="button" id="btnQuickConvert" title="转换形状：改为平行四边形、梯形、星形等"></button>
           <button type="button" id="btnQuickIsolate" title="隐藏其它物件（隔离）"></button>
           <span class="selection-tools-sep" id="quickToolsSep" hidden></span>
           <button type="button" id="btnQuickStyle" title="样式刷：复制填充、描边与粗细"></button>
         </div>
+        <button type="button" class="fit-float" id="fitFloatBtn" title="适应屏幕：画布全显" aria-label="适应屏幕" hidden>
+          <svg class="ic"><use href="#i-fit"/></svg><span>适应屏幕</span>
+        </button>
         <div class="drop-hint" id="dropHint"><svg class="ic"><use href="#i-upload"/></svg><span>松开以导入图片 / 文本 / 项目文件</span></div>
       </div>
     </main>
@@ -347,6 +357,9 @@
 
     <!-- 样式刷：点击目标物件后出现 5 个应用选项 -->
     <div class="style-brush-menu" id="styleBrushMenu" role="menu" aria-label="应用样式" hidden></div>
+
+    <!-- 形状转换：选中物件后从浮动工具条打开 -->
+    <div class="shape-convert-menu" id="shapeConvertMenu" role="menu" aria-label="转换为形状" hidden></div>
 
     <!-- 填充/描边设置弹窗：点击左侧色槽打开 -->
     <div class="paint-pop" id="paintPopover" role="dialog" aria-label="填充与描边设置" hidden>
@@ -559,6 +572,14 @@
                   <input type="range" id="strokeWidth" min="0" max="30" value="0" aria-label="描边宽度">
                   <span class="value-tag" id="strokeWidthVal">0</span>
                 </div>
+                <div class="control-row stroke-align-row">
+                  <span class="control-label">对齐</span>
+                  <div class="stroke-align-seg" role="radiogroup" aria-label="描边对齐">
+                    <button type="button" class="seg-btn" id="btnStrokeOutside" data-act="strokeAlign" data-arg="outside" title="描边居外"><svg class="ic"><use href="#i-sa-outside"/></svg><span>居外</span></button>
+                    <button type="button" class="seg-btn" id="btnStrokeCenter" data-act="strokeAlign" data-arg="center" title="描边居中（默认）"><svg class="ic"><use href="#i-sa-center"/></svg><span>居中</span></button>
+                    <button type="button" class="seg-btn" id="btnStrokeInside" data-act="strokeAlign" data-arg="inside" title="描边居内"><svg class="ic"><use href="#i-sa-inside"/></svg><span>居内</span></button>
+                  </div>
+                </div>
                 <div class="control-row">
                   <span class="control-label">描边类型</span>
                   <select id="strokePaintMode" aria-label="描边类型">
@@ -715,6 +736,10 @@
                 <div class="prop-item" title="行高"><div class="prop-icon"><svg class="ic"><use href="#i-text-height"/></svg></div><input type="number" id="lineHeightInput" class="prop-input" step="0.1" aria-label="行高"></div>
               </div>
               <div class="prop-item" title="字间距"><div class="prop-icon"><svg class="ic"><use href="#i-text-width"/></svg></div><input type="number" id="letterSpacingInput" class="prop-input" aria-label="字间距"></div>
+              <div class="geo-row" style="margin-top:8px;">
+                <div class="prop-item" title="段落间距：每个段落之后的额外留白"><div class="prop-icon"><svg class="ic"><use href="#i-paragraph"/></svg></div><input type="number" id="paraSpacingInput" class="prop-input" min="0" max="300" aria-label="段落间距"></div>
+                <div class="prop-item" title="首行缩进：每个段落第一行的缩进量"><div class="prop-icon"><svg class="ic"><use href="#i-indent"/></svg></div><input type="number" id="textIndentInput" class="prop-input" min="0" max="600" aria-label="首行缩进"></div>
+              </div>
               <div class="style-toggles" style="margin-top:8px;">
                 <button class="toggle-btn" id="btnBold" data-keepfocus="1" data-act="textStyle" data-arg="bold" title="加粗"><svg class="ic"><use href="#i-bold"/></svg></button>
                 <button class="toggle-btn" id="btnItalic" data-keepfocus="1" data-act="textStyle" data-arg="italic" title="斜体"><svg class="ic"><use href="#i-italic"/></svg></button>

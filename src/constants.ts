@@ -1,4 +1,4 @@
-import type { BlendMode, CurveNodeType, ElementType, FillMode, FontWeight, LineStyle, Shadow, ShadowType, StrokeStyle, TextAlign } from './types';
+import type { BlendMode, CurveNodeType, ElementType, FillMode, FontWeight, LineStyle, Shadow, ShadowType, StrokeAlign, StrokeStyle, TextAlign } from './types';
 import { blobPoints, splashPoints, wavePoints } from './fluid';
 
 export const VERSION = 4;
@@ -26,6 +26,8 @@ export const FILL_MODES: FillMode[] = ['solid', 'linear', 'radial', 'conic'];
 export const LINE_STYLES: LineStyle[] = ['solid', 'dashed', 'dotted', 'wavy'];
 export const TEXT_ALIGNS: TextAlign[] = ['left', 'center', 'right', 'justify'];
 export const STROKE_STYLES: StrokeStyle[] = ['solid', 'dashed', 'dotted'];
+export const STROKE_ALIGNS: StrokeAlign[] = ['outside', 'center', 'inside'];
+export const STROKE_ALIGN_LABELS: Record<StrokeAlign, string> = { outside: '居外', center: '居中', inside: '居内' };
 export const SHADOW_TYPES: ShadowType[] = ['drop', 'glow'];
 export const BLEND_MODES: BlendMode[] = ['normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten', 'difference'];
 export const TYPE_LABELS: Record<ElementType | 'group', string> = { rect: '矩形', circle: '圆形', triangle: '三角形', star: '五角星', arrow: '箭头', line: '线条', curve: '曲线', text: '文本', image: '图片', boolean: '布尔图形', group: '组合',

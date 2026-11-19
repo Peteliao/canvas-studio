@@ -1,12 +1,12 @@
 /* 模型与 schema 校验：所有存档/历史/项目文件的统一入口 */
 import {
-    VERSION, COMPAT_VERSIONS, TYPES, FILL_MODES, LINE_STYLES, TEXT_ALIGNS, STROKE_STYLES,
+    VERSION, COMPAT_VERSIONS, TYPES, FILL_MODES, LINE_STYLES, TEXT_ALIGNS, STROKE_STYLES, STROKE_ALIGNS,
     BLEND_MODES, SHADOW_TYPES, TYPE_LABELS, MAX_CANVAS_SIDE, MAX_CURVE_NODES, CURVE_NODE_TYPES, DATA_IMAGE_RE,
     VECTOR_SHAPE_TYPES, VECTOR_SHAPE_PRESETS
 } from './constants';
 import type {
     Fill, Stroke, StrokeGradient, Shadow, TextStyle, TextRun, LineSpec, Curve, CurveNode, ImageRef,
-    CanvasElement, Guide, Model, ElementType, StrokeStyle,
+    CanvasElement, Guide, Model, ElementType, StrokeStyle, StrokeAlign,
     TextSizeMode, CurveNodeType, FontWeight, Point, Box
 } from './types';
 import { state, nodeMap } from './state';
@@ -55,6 +55,7 @@ export function makeStroke(raw: unknown): Stroke {
         color: validColor(o.color, '#1f2937'),
         width: clamp(finite(o.width, 0), 0, 60),
         style: enumOf(STROKE_STYLES, o.style, 'solid'),
+        align: enumOf<StrokeAlign>(STROKE_ALIGNS, o.align, 'center'),
         gradient: makeStrokeGradient(o.gradient)
     };
 }
@@ -89,6 +90,8 @@ export function makeText(raw: unknown): TextStyle {
         fontWeight: enumOf<FontWeight>([100, 300, 400, 500, 700, 900], o.fontWeight, 400),
         lineHeight: clamp(finite(o.lineHeight, 1.2), 0.3, 5),
         letterSpacing: clamp(finite(o.letterSpacing, 0), -20, 100),
+        paraSpacing: clamp(finite(o.paraSpacing, 0), 0, 300),
+        indent: clamp(finite(o.indent, 0), 0, 600),
         align: enumOf(TEXT_ALIGNS, o.align, 'left'),
         sizeMode: enumOf<TextSizeMode>(['fixed', 'autoH', 'autoWH'], o.sizeMode, 'fixed')
     };

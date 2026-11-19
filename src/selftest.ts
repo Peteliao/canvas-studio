@@ -12,7 +12,7 @@ import { buildSVG, buildPDF } from './vector-export';
 import { SHAPE_PARAM_SPECS, shapePoints, shapeClipPath, sanitizeShapeParams } from './shapes';
 import { getAABB, setPivot } from './geometry';
 import { textMeasureCtx, canvasTextWidth, applyAutoSize } from './render';
-import { layoutText, exportBoundsFor } from './exporter';
+import { layoutText, exportBoundsFor, textStrokeLayers } from './exporter';
 import { bucketColor, elementSlotColor, applyBucketColor } from './bucket';
 import { neighborGapsFor, alignmentMeasures, drawMeasure } from './measure';
 import type { GapMeasure, AlignMeasure } from './measure';
@@ -20,7 +20,8 @@ import { boxGuideMeasure } from './guides';
 import { setSelection } from './selection';
 import { dbAvailable } from './db';
 import { EFFECT_PRESETS } from './effects';
-import { applyStyleToElement, styleOptionEnabled } from './selectiontools';
+import { applyStyleToElement, styleOptionEnabled, canConvertShape, convertElementShape } from './selectiontools';
+import { showFitFloat, hideFitFloat } from './view';
 
 export function runSelfTest(): void {
     const results: { name: string; ok: boolean; detail: string }[] = [];
@@ -99,8 +100,11 @@ export function runSelfTest(): void {
         const line = buildElement('line', 0, 0);
         assert(!styleOptionEnabled(src, line, 'all') && styleOptionEnabled(src, line, 'strokeWidth'), '线条目标能力判断异常');
         const text = buildElement('text', 0, 0);
-        assert(!styleOptionEnabled(src, text, 'stroke') && styleOptionEnabled(src, text, 'fill'), '文本目标能力判断异常');
-        return '填充/描边/粗细 · 目标能力过滤';
+        assert(styleOptionEnabled(src, text, 'stroke') && styleOptionEnabled(src, text, 'fill'), '文本描边/填充能力判断异常');
+        src.stroke.align = 'outside';
+        text.stroke = makeStroke({ color: '#000000', width: 1 });
+        assert(applyStyleToElement(src, text, 'stroke') && text.stroke.align === 'outside', '文本未复制描边对齐');
+        return '填充/描边/粗细 · 目标能力过滤 · 文本描边对齐';
     });
     check('线条四样式', () => {
         ['solid', 'dashed', 'dotted', 'wavy'].forEach(s => assert(lineHeightFor(makeSelfLine(s)) > 0, s + ' 高度异常'));
@@ -368,6 +372,98 @@ export function runSelfTest(): void {
         applyAutoSize(el);
         assert(el.h >= lines.length * el.text!.fontSize * el.text!.lineHeight - 1, '自动高度未随内容增长');
         return lines.length + ' 行 · 自动高度生效';
+    });
+    check('多行段落 / 段落间距 / 首行缩进', () => {
+        const el = buildElement('text', 0, 0);
+        el.w = 400;
+        el.text = makeText({ fontSize: 20, paraSpacing: 12, indent: 30,
+            runs: [{ text: '第一段\n第二段\n\n第四段' }] });
+        const ctx = textMeasureCtx();
+        const lines = layoutText(el, el.w, (run, text) => canvasTextWidth(ctx, el.text!, run, text));
+        assert(lines.length === 4, '空段落未保留为独立行：' + lines.length);
+        assert(lines[0].paraStart && lines[1].paraStart && lines[2].paraStart && lines[3].paraStart, '段落起始标记异常');
+        assert(lines[2].length === 0, '空段落应无排版原子');
+        const narrow = buildElement('text', 0, 0);
+        narrow.w = 80;
+        narrow.text = makeText({ fontSize: 20, indent: 30, runs: [{ text: '一二三四五六七八九十' }] });
+        const nlines = layoutText(narrow, narrow.w, (run, text) => canvasTextWidth(ctx, narrow.text!, run, text));
+        const firstW = nlines[0].reduce((a, t) => a + t.w, 0);
+        assert(firstW <= narrow.w - narrow.text!.indent + 0.5, '首行未扣除缩进宽度');
+        narrow.text!.sizeMode = 'autoH';
+        narrow.h = 1;
+        applyAutoSize(narrow);
+        const lh = narrow.text!.fontSize * narrow.text!.lineHeight;
+        const spacingTotal = (nlines.length - 1) * narrow.text!.paraSpacing;
+        assert(narrow.h >= nlines.length * lh + spacingTotal - 1, '自动高度未计入段落间距');
+        const svg = buildSVG({ bounds: { x: 0, y: 0, w: el.w, h: el.h }, elements: [el], transparent: true });
+        assert(svg.includes('x="30" y="0"'), 'SVG 首行缩进未生效');
+        assert(svg.includes(`y="${el.text!.fontSize * el.text!.lineHeight + el.text!.paraSpacing}"`), 'SVG 段落间距未生效');
+        return '4 行（含空段）· 缩进换行 · 间距计入自动高度';
+    });
+    check('文本描边三种对齐', () => {
+        const el = buildElement('text', 0, 0);
+        el.w = 240; el.h = 60;
+        el.text = makeText({ fontSize: 24, runs: [{ text: '描边文字' }] });
+        el.stroke = makeStroke({ width: 4, color: '#ff3300', align: 'center' });
+        const alpha = (c: HTMLCanvasElement): boolean => {
+            const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+            for (let i = 3; i < d.length; i += 4) if (d[i] > 0) return true;
+            return false;
+        };
+        const layers = textStrokeLayers(el, 1);
+        assert(layers && layers.pad > 0 && layers.stroke.width > 0, '文本描边图层缺失');
+        assert(alpha(layers!.fill) && alpha(layers!.stroke), '文本填充/描边图层为空');
+        const svgFor = (): string => buildSVG({ bounds: { x: 0, y: 0, w: el.w, h: el.h }, elements: [el], transparent: true });
+        assert(svgFor().includes('stroke-width="4"') && !svgFor().includes('paint-order="stroke"'), '居中描边导出异常');
+        el.stroke!.align = 'outside';
+        const outLayers = textStrokeLayers(el, 1);
+        assert(outLayers && alpha(outLayers.stroke), '居外描边图层为空（多字遮罩合成异常）');
+        const outSvg = svgFor();
+        assert(outSvg.includes('<mask id="tm0"') && outSvg.includes('stroke-width="8"') && !outSvg.includes('paint-order'), '居外描边遮罩缺失');
+        el.fill.enabled = false;
+        assert(svgFor().includes('fill="none"') && svgFor().includes('<mask id="tm0"'), '无填充居外描边导出异常');
+        el.fill.enabled = true;
+        el.stroke!.align = 'inside';
+        const inLayers = textStrokeLayers(el, 1);
+        assert(inLayers && alpha(inLayers.stroke), '居内描边图层为空（多字遮罩合成异常）');
+        assert(svgFor().includes('<mask id="tm0"') && svgFor().includes('stroke-width="8"'), '居内描边遮罩缺失');
+        ['btnStrokeOutside', 'btnStrokeCenter', 'btnStrokeInside'].forEach(id => assert(!!document.getElementById(id), '缺少描边对齐按钮 ' + id));
+        return '填充/描边分层 · 外/中/内导出 · 三图标按钮';
+    });
+    check('形状转换', () => {
+        const el = buildElement('rect', 10, 20);
+        el.name = '矩形 1';
+        el.w = 260; el.h = 140;
+        el.shapeParams = { corner: 18 };
+        el.fill = makeFill({ mode: 'linear', color: '#3366ff' });
+        el.stroke = makeStroke({ width: 6, color: '#ff6600', align: 'outside' });
+        assert(canConvertShape(el), '矩形应可转换');
+        assert(convertElementShape(el, 'trapezoid'), '转换为梯形失败');
+        assert(el.type === 'trapezoid' && el.name === '梯形 1' && Object.keys(el.shapeParams).length === 0, '转换未更新类型/名称/参数');
+        assert(el.x === 10 && el.y === 20 && el.w === 260 && el.h === 140, '转换不应改变位置尺寸');
+        assert(el.fill.mode === 'linear' && el.stroke.width === 6 && el.stroke.align === 'outside', '转换不应改变填充描边');
+        assert(!convertElementShape(el, 'text' as ElementType) && el.type === 'trapezoid', '非轮廓类型不应转换');
+        ['parallelogram', 'pentagon', 'heart', 'blob'].forEach(t => {
+            const probe = buildElement(t as ElementType, 0, 0);
+            assert(canConvertShape(probe), t + ' 应可参与形状转换');
+        });
+        assert(!canConvertShape(buildElement('text', 0, 0)) && !canConvertShape(buildElement('line', 0, 0)), '文本/线条不应转换');
+        const svg = buildSVG({ bounds: { x: 0, y: 0, w: el.w, h: el.h }, elements: [el], transparent: true });
+        assert(svg.includes('<polygon') && svg.includes('mask="url(#sm0)"'), '转换后 SVG 轮廓/描边异常');
+        const masked = svg.split('<g mask="url(#sm0)">');
+        assert(masked.length === 2 && masked[0].includes('fill="url(#g0)"'), '居外描边遮罩误遮了填充');
+        assert(masked[1].includes('fill="none"') && masked[1].includes('stroke-width="12"'), '居外描边未单独分层');
+        return '矩形 → 梯形 · 保留样式几何 · 命名同步';
+    });
+    check('缩放/平移浮钮', () => {
+        const btn = document.getElementById('fitFloatBtn') as HTMLButtonElement | null;
+        assert(btn && btn.classList.contains('fit-float'), '缺少「适应屏幕」浮钮');
+        showFitFloat(window.innerWidth / 2, window.innerHeight / 2);
+        assert(!btn!.hidden, '浮钮未显示');
+        assert(btn!.style.left.endsWith('px') && btn!.style.top.endsWith('px'), '浮钮未定位到指针附近');
+        hideFitFloat(true);
+        assert(btn!.hidden, '浮钮未隐藏');
+        return '指针附近浮现 · 可点击 · 自动消失已绑定';
     });
     check('富文本无 HTML 注入', () => {
         const nodes = document.querySelectorAll('.text-content *');

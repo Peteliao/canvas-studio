@@ -108,26 +108,41 @@ export function shapeFilter(el: CanvasElement): string {
     }
     return parts.join(' ');
 }
-/** 生成描边 SVG 叠加层的内部标记（像素坐标，与导出保持一致的居中描边） */
+/** 生成描边 SVG 叠加层的内部标记（像素坐标，支持居外 / 居中 / 居内对齐） */
 export function strokeOverlayMarkup(el: CanvasElement, w: number, h: number): string {
     const st = el.stroke;
     if (!st || st.width <= 0 || !STROKE_SVG_TYPES.includes(el.type)) return '';
+    const align = st.align || 'center';
     const dash = st.style === 'dashed' ? ` stroke-dasharray="${st.width * 3} ${st.width * 2}"`
         : st.style === 'dotted' ? ` stroke-dasharray="0.1 ${st.width * 1.8}" stroke-linecap="round"` : '';
     let defs = '', paint = st.color;
     if (st.gradient) {
         const id = 'stg_' + el.id;
-        defs = `<defs>${strokeDefMarkup(id, st.gradient)}</defs>`;
+        defs = strokeDefMarkup(id, st.gradient);
         paint = `url(#${id})`;
     }
-    const attrs = `fill="none" stroke="${paint}" stroke-width="${st.width}"${dash}`;
-    const pts = shapePoints(el);
-    if (pts) {
-        return defs + `<polygon points="${pts.map(([x, y]) => `${round2(x * w / 100)},${round2(y * h / 100)}`).join(' ')}" stroke-linejoin="round" ${attrs}/>`;
+    const effW = align === 'center' ? st.width : st.width * 2;
+    const strokeAttrs = `fill="none" stroke="${paint}" stroke-width="${effW}"${dash}`;
+    const shape = (fill: string, extra = ''): string => {
+        const pts = shapePoints(el);
+        if (pts) return `<polygon points="${pts.map(([x, y]) => `${round2(x * w / 100)},${round2(y * h / 100)}`).join(' ')}" fill="${fill}"${extra}/>`;
+        if (el.type === 'circle') return `<ellipse cx="${w / 2}" cy="${h / 2}" rx="${w / 2}" ry="${h / 2}" fill="${fill}"${extra}/>`;
+        const rx = Math.min(el.borderRadius, w / 2, h / 2);
+        return `<rect x="0" y="0" width="${w}" height="${h}" rx="${rx}" fill="${fill}"${extra}/>`;
+    };
+    if (align === 'center') {
+        return `<defs>${defs}</defs>${shape('none', ' ' + strokeAttrs)}`;
     }
-    if (el.type === 'circle') return defs + `<ellipse cx="${w / 2}" cy="${h / 2}" rx="${w / 2}" ry="${h / 2}" ${attrs}/>`;
-    const rx = Math.min(el.borderRadius, w / 2, h / 2);
-    return defs + `<rect x="0" y="0" width="${w}" height="${h}" rx="${rx}" ${attrs}/>`;
+    const pad = st.width * 2 + 4;
+    if (align === 'inside') {
+        defs += `<clipPath id="stc_${el.id}" clipPathUnits="userSpaceOnUse">${shape('#000')}</clipPath>`;
+    } else {
+        defs += `<mask id="stm_${el.id}" maskUnits="userSpaceOnUse" x="${round2(-pad)}" y="${round2(-pad)}" width="${round2(w + pad * 2)}" height="${round2(h + pad * 2)}">`
+            + `<rect x="${round2(-pad)}" y="${round2(-pad)}" width="${round2(w + pad * 2)}" height="${round2(h + pad * 2)}" fill="#fff"/>`
+            + shape('#000') + `</mask>`;
+    }
+    const clip = align === 'inside' ? ` clip-path="url(#stc_${el.id})"` : ` mask="url(#stm_${el.id})"`;
+    return `<defs>${defs}</defs><g${clip}>${shape('none', ' ' + strokeAttrs + ' stroke-linejoin="round"')}</g>`;
 }
 export function wavyGeom(line: LineSpec): { amp: number; period: number } {
     const amp = line.width * 0.5 + line.wavyAmp * 1.5;

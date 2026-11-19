@@ -196,6 +196,8 @@ export function updatePropPanel(el: CanvasElement | null): void {
         $<HTMLInputElement>('fontSizeInput').value = String(t.fontSize);
         $<HTMLInputElement>('lineHeightInput').value = String(t.lineHeight);
         $<HTMLInputElement>('letterSpacingInput').value = String(t.letterSpacing);
+        $<HTMLInputElement>('paraSpacingInput').value = String(t.paraSpacing);
+        $<HTMLInputElement>('textIndentInput').value = String(t.indent);
         const match = `${t.fontFamily}|${t.fontWeight}`;
         const sel = $<HTMLSelectElement>('fontFamilyInput');
         const matchOpt = Array.from(sel.options).find(o => o.value === match || o.value === `${t.fontFamily}|400`);

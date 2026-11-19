@@ -14,7 +14,7 @@ import { bucketSlotLabel, setBucketColor, syncBucketSwatch } from './bucket';
 import { updateCanvasBg } from './styles';
 import { syncPaintStrokeWidth } from './railstroke';
 import { startTextEdit } from './richtext';
-import type { BlendMode, GradientStop, ShadowType, StrokeGradient } from './types';
+import type { BlendMode, GradientStop, ShadowType, StrokeAlign, StrokeGradient } from './types';
 
 interface EyeDropperResult { sRGBHex: string; }
 declare global {
@@ -62,6 +62,13 @@ export function syncStyleControls(): void {
     $<HTMLInputElement>('strokeGradPosY').value = String(g ? Math.round(g.posY) : 50);
     setStrokeGradientStops(g ? g.stops : defaultStrokeStops(st.color));
     $<HTMLSelectElement>('blendMode').value = el.blendMode || 'normal';
+    const align = st.align || 'center';
+    (['outside', 'center', 'inside'] as const).forEach(a => {
+        const b = $('btnStroke' + a[0].toUpperCase() + a.slice(1));
+        b.classList.toggle('active', align === a);
+        b.setAttribute('aria-checked', String(align === a));
+        (b as HTMLButtonElement).disabled = el.type === 'line' || el.type === 'curve';
+    });
     $<HTMLInputElement>('shadowEnabled').checked = !!sh.enabled; $<HTMLInputElement>('shadowColor').value = sh.color;
     $<HTMLSelectElement>('shadowType').value = sh.type;
     $<HTMLInputElement>('shadowX').value = String(sh.x); $('shadowXVal').textContent = String(sh.x);
@@ -78,7 +85,9 @@ export function syncStyleControls(): void {
 export function applyStyleChange(): void {
     const els = selectedEls().filter(e => !e.locked);
     if (!els.length) return;
-    const st = makeStroke({ color: $<HTMLInputElement>('strokeColor').value, width: $<HTMLInputElement>('strokeWidth').value, style: $<HTMLSelectElement>('strokeStyle').value });
+    const align = $('btnStrokeOutside').classList.contains('active') ? 'outside'
+        : $('btnStrokeInside').classList.contains('active') ? 'inside' : 'center';
+    const st = makeStroke({ color: $<HTMLInputElement>('strokeColor').value, width: $<HTMLInputElement>('strokeWidth').value, style: $<HTMLSelectElement>('strokeStyle').value, align });
     const grad = readStrokeGradient(st.color);
     const sh = makeShadow({ enabled: $<HTMLInputElement>('shadowEnabled').checked, type: $<HTMLSelectElement>('shadowType').value,
         color: $<HTMLInputElement>('shadowColor').value, x: $<HTMLInputElement>('shadowX').value, y: $<HTMLInputElement>('shadowY').value,
@@ -95,6 +104,20 @@ export function applyStyleChange(): void {
     });
     syncPaintStrokeWidth();
     scheduleCommit();
+}
+/** 描边对齐：居外 / 居中 / 居内（曲线与线条使用专属样式面板，不参与） */
+export function setStrokeAlign(align: string): void {
+    if (align !== 'outside' && align !== 'center' && align !== 'inside') return;
+    const a = align as StrokeAlign;
+    const els = selectedEls().filter(e => !e.locked && e.type !== 'line' && e.type !== 'curve');
+    if (!els.length) return;
+    els.forEach(e => {
+        const prev = e.stroke || makeStroke(null);
+        e.stroke = Object.assign({}, prev, { align: a });
+        syncElement(e.id);
+    });
+    scheduleCommit();
+    syncStyleControls();
 }
 /** 描边渐变色标变更（来自 shared editor） */
 export function applyStrokeGradientStops(stops: GradientStop[]): void {

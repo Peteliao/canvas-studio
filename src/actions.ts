@@ -25,7 +25,7 @@ import { groupSelected, ungroupSelected, collapseAllGroups, renameSelected, rend
 import { copyToClipboardSystem, pasteFromClipboardSystem } from './clipboard';
 import { newProject, createVersion } from './projects';
 import { runSelfTest } from './selftest';
-import { eyedropper, addSwatch, applyHexInput, useColor, applyStyleChange, applyFillAlpha, applyShadowPolar, applyShadowXY, applyShadowPreset, applyStrokePaintMode, applyStrokeGradientGeometry } from './swatches';
+import { eyedropper, addSwatch, applyHexInput, useColor, applyStyleChange, applyFillAlpha, applyShadowPolar, applyShadowXY, applyShadowPreset, applyStrokePaintMode, applyStrokeGradientGeometry, setStrokeAlign } from './swatches';
 import { setLineStyle, setWavyDash, curveOp, clientToWorld } from './interaction';
 import { updateElementColor, updateCanvasBg, toggleElBgMode, updateElementBackground, updateElementOpacity, updateElementRadius, updateLineStyle, toggleBgMode } from './styles';
 import { updateCurveFill, updateCurveStroke } from './panel';
@@ -75,6 +75,7 @@ export const ACTIONS: Record<string, ActionFn> = {
     textStyle: arg => updateTextStyle(arg!),
     textAlign: arg => updateTextAlign(arg as TextAlign),
     shadowPreset: arg => applyShadowPreset(arg || ''),
+    strokeAlign: arg => setStrokeAlign(arg || 'center'),
     layer: arg => layerAction(arg!),
     relLayer: arg => startRelLayer(arg as 'under' | 'above'),
     exportConfig: () => { void exportConfig(); },
@@ -205,6 +206,8 @@ export function bindDelegates(): void {
         fontSizeInput: () => updateTextStyle('size'),
         lineHeightInput: () => updateTextStyle('lineHeight'),
         letterSpacingInput: () => updateTextStyle('spacing'),
+        paraSpacingInput: () => updateTextStyle('paraSpacing'),
+        textIndentInput: () => updateTextStyle('indent'),
         // V12 新增控件
         strokeColor: () => applyStyleChange(),
         strokeWidth: () => applyStyleChange(),

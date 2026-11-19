@@ -20,16 +20,31 @@ export function fillDefs(id: string, f: Fill): { def: string; ref: string } {
     return { def, ref: `url(#${id})` };
 }
 
-function shapeSVG(el: CanvasElement, ref: string, strokeRef: string): string {
-    const st = el.stroke && el.stroke.width > 0
-        ? ` stroke="${strokeRef}" stroke-width="${el.stroke.width}"${el.stroke.style === 'dashed' ? ' stroke-dasharray="8 5"' : el.stroke.style === 'dotted' ? ' stroke-dasharray="2 4"' : ''}` : '';
-    const dyn = shapePoints(el);
-    if (dyn) {
-        const pts = dyn.map(([x, y]) => `${x * el.w / 100},${y * el.h / 100}`).join(' ');
-        return `<polygon points="${pts}" fill="${ref}"${st}/>`;
+function shapeSVG(el: CanvasElement, ref: string, strokeRef: string, idx: number, defs: string[]): string {
+    const st = el.stroke && el.stroke.width > 0 ? el.stroke : null;
+    const align = st ? (st.align || 'center') : 'center';
+    const paint = (fill: string, extra = ''): string => {
+        const dyn = shapePoints(el);
+        if (dyn) {
+            const pts = dyn.map(([x, y]) => `${x * el.w / 100},${y * el.h / 100}`).join(' ');
+            return `<polygon points="${pts}" fill="${fill}"${extra}/>`;
+        }
+        if (el.type === 'circle') return `<ellipse cx="${el.w / 2}" cy="${el.h / 2}" rx="${el.w / 2}" ry="${el.h / 2}" fill="${fill}"${extra}/>`;
+        return `<rect x="0" y="0" width="${el.w}" height="${el.h}" rx="${el.borderRadius}" fill="${fill}"${extra}/>`;
+    };
+    const strokeAttr = !st ? '' : ` stroke="${strokeRef}" stroke-width="${align === 'center' ? st.width : st.width * 2}"`
+        + (st.style === 'dashed' ? ' stroke-dasharray="8 5"' : st.style === 'dotted' ? ' stroke-dasharray="2 4"' : '');
+    const base = paint(ref, strokeAttr);
+    if (!st || align === 'center') return base;
+    const pad = st.width * 2 + 4;
+    if (align === 'inside') {
+        defs.push(`<clipPath id="sc${idx}" clipPathUnits="userSpaceOnUse">${paint('#000')}</clipPath>`);
+        return `<g clip-path="url(#sc${idx})">${base}</g>`;
     }
-    if (el.type === 'circle') return `<ellipse cx="${el.w / 2}" cy="${el.h / 2}" rx="${el.w / 2}" ry="${el.h / 2}" fill="${ref}"${st}/>`;
-    return `<rect x="0" y="0" width="${el.w}" height="${el.h}" rx="${el.borderRadius}" fill="${ref}"${st}/>`;
+    defs.push(`<mask id="sm${idx}" maskUnits="userSpaceOnUse" x="${-pad}" y="${-pad}" width="${el.w + pad * 2}" height="${el.h + pad * 2}">`
+        + `<rect x="${-pad}" y="${-pad}" width="${el.w + pad * 2}" height="${el.h + pad * 2}" fill="#fff"/>${paint('#000')}</mask>`);
+    // 遮罩只能套在描边上，否则字形内的填充也会被黑色遮掉
+    return paint(ref) + `<g mask="url(#sm${idx})">${paint('none', strokeAttr + ' stroke-linejoin="round"')}</g>`;
 }
 
 export interface SVGExportOpts { bounds: ExportBounds; elements: CanvasElement[]; transparent?: boolean; }
@@ -61,26 +76,61 @@ export function buildSVG(opts: SVGExportOpts): string {
             const ctx = textMeasureCtx();
             const lines = layoutText(el, el.w, (run, text) => canvasTextWidth(ctx, t, run, text));
             const lh = t.fontSize * t.lineHeight;
-            const spans: string[] = [];
-            lines.forEach((tokens, li) => {
-                const total = tokens.reduce((a, tok) => a + tok.w, 0);
-                const gaps = tokens.length - 1;
-                const justify = t.align === 'justify' && li < lines.length - 1 && !lines[li].forcedEnd && gaps > 0;
-                const extra = justify ? (el.w - total) / gaps : 0;
-                let x = t.align === 'center' ? (el.w - total) / 2 : t.align === 'right' ? el.w - total : 0;
-                const y = round2(li * lh);
-                tokens.forEach(tok => {
-                    const r = tok.run;
-                    const attrs = ` x="${round2(x)}" y="${y}"`;
-                    const weight = r.bold ? 700 : t.fontWeight;
-                    const style = r.italic ? ' font-style="italic"' : '';
-                    const deco = r.underline ? ' text-decoration="underline"' : '';
-                    const fill = r.color ? ` fill="${r.color}"` : '';
-                    spans.push(`<tspan${attrs} font-weight="${weight}"${style}${deco}${fill}>${xmlEscape(tok.text)}</tspan>`);
-                    x += tok.w + extra;
+            const buildSpans = (mask: boolean, maskFill = '#fff'): string => {
+                const out: string[] = [];
+                let lineY = 0;
+                lines.forEach((tokens, li) => {
+                    if (li > 0 && tokens.paraStart) lineY += t.paraSpacing;
+                    const inset = tokens.paraStart ? Math.min(t.indent, el.w) : 0;
+                    const avail = Math.max(1, el.w - inset);
+                    const total = tokens.reduce((a, tok) => a + tok.w, 0);
+                    const gaps = tokens.length - 1;
+                    const justify = t.align === 'justify' && li < lines.length - 1 && !lines[li].forcedEnd && gaps > 0;
+                    const extra = justify ? Math.max(0, avail - total) / gaps : 0;
+                    let x = t.align === 'center' ? inset + (avail - total) / 2 : t.align === 'right' ? el.w - total : inset;
+                    const y = round2(lineY);
+                    tokens.forEach(tok => {
+                        const r = tok.run;
+                        const attrs = ` x="${round2(x)}" y="${y}"`;
+                        const weight = r.bold ? 700 : t.fontWeight;
+                        const style = r.italic ? ' font-style="italic"' : '';
+                        const deco = r.underline ? ' text-decoration="underline"' : '';
+                        const fill = mask ? ` fill="${maskFill}"` : (r.color ? ` fill="${r.color}"` : '');
+                        out.push(`<tspan${attrs} font-weight="${weight}"${style}${deco}${fill}>${xmlEscape(tok.text)}</tspan>`);
+                        x += tok.w + extra;
+                    });
+                    lineY += lh;
                 });
-            });
-            inner = `<text font-family="${xmlEscape(t.fontFamily)}" font-size="${t.fontSize}" font-weight="${t.fontWeight}" letter-spacing="${t.letterSpacing}" fill="${el.fill.enabled ? hexToRgba(el.fill.color, finite(el.fill.alpha, 1)) : 'none'}" dominant-baseline="text-before-edge">${spans.join('')}</text>`;
+                return out.join('');
+            };
+            const head = `<text font-family="${xmlEscape(t.fontFamily)}" font-size="${t.fontSize}" font-weight="${t.fontWeight}" letter-spacing="${t.letterSpacing}" dominant-baseline="text-before-edge"`;
+            const fill = ` fill="${el.fill.enabled ? hexToRgba(el.fill.color, finite(el.fill.alpha, 1)) : 'none'}"`;
+            const st = el.stroke && el.stroke.width > 0 ? el.stroke : null;
+            if (!st) {
+                inner = `${head}${fill}>${buildSpans(false)}</text>`;
+            } else {
+                const align = st.align || 'center';
+                let strokeRef = st.color;
+                if (st.gradient) {
+                    defs.push(strokeDefMarkup('ts' + i, st.gradient));
+                    strokeRef = `url(#ts${i})`;
+                }
+                const sw = align === 'center' ? st.width : st.width * 2;
+                if (align === 'inside') {
+                    defs.push(`<mask id="tm${i}" maskUnits="userSpaceOnUse" x="0" y="0" width="${el.w}" height="${el.h}"><text font-family="${xmlEscape(t.fontFamily)}" font-size="${t.fontSize}" font-weight="${t.fontWeight}" letter-spacing="${t.letterSpacing}" dominant-baseline="text-before-edge" fill="#fff">${buildSpans(true)}</text></mask>`);
+                    inner = `${head}${fill}>${buildSpans(false)}</text>`
+                        + `<g mask="url(#tm${i})">${head} fill="none" stroke="${strokeRef}" stroke-width="${sw}" stroke-linejoin="round">${buildSpans(false)}</text></g>`;
+                } else if (align === 'outside') {
+                    const pad = sw + 6;
+                    defs.push(`<mask id="tm${i}" maskUnits="userSpaceOnUse" x="${-pad}" y="${-pad}" width="${el.w + pad * 2}" height="${el.h + pad * 2}">`
+                        + `<rect x="${-pad}" y="${-pad}" width="${el.w + pad * 2}" height="${el.h + pad * 2}" fill="#fff"/>`
+                        + `<text font-family="${xmlEscape(t.fontFamily)}" font-size="${t.fontSize}" font-weight="${t.fontWeight}" letter-spacing="${t.letterSpacing}" dominant-baseline="text-before-edge" fill="#000">${buildSpans(true, '#000')}</text></mask>`);
+                    inner = `${head}${fill}>${buildSpans(false)}</text>`
+                        + `<g mask="url(#tm${i})">${head} fill="none" stroke="${strokeRef}" stroke-width="${sw}" stroke-linejoin="round">${buildSpans(false)}</text></g>`;
+                } else {
+                    inner = `${head}${fill} stroke="${strokeRef}" stroke-width="${sw}" stroke-linejoin="round">${buildSpans(false)}</text>`;
+                }
+            }
         } else if (el.type === 'line') {
             const ln = el.line!, y = h / 2;
             if (ln.style === 'wavy') {
@@ -121,7 +171,7 @@ export function buildSVG(opts: SVGExportOpts): string {
                 defs.push(strokeDefMarkup('s' + i, el.stroke.gradient));
                 strokeRef = `url(#s${i})`;
             }
-            inner = shapeSVG(el, f.ref, strokeRef);
+            inner = shapeSVG(el, f.ref, strokeRef, i, defs);
         }
         let maskAttr = '';
         if (el.maskAssetId && state.assets[el.maskAssetId]) {

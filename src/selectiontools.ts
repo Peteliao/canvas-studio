@@ -1,14 +1,16 @@
-/* 选中物件浮动工具条：临时隔离显示 + 样式刷 */
-import type { CanvasElement, StrokeGradient } from './types';
+/* 选中物件浮动工具条：临时隔离显示 + 样式刷 + 形状转换 */
+import type { CanvasElement, ElementType, StrokeAlign, StrokeGradient } from './types';
+import { TYPE_LABELS, VECTOR_SHAPE_TYPES, FLUID_SHAPE_TYPES, SHAPE_MENU_BASIC } from './constants';
 import { state, nodeMap } from './state';
-import { $, $opt, clamp, deepCopy, iconEl, toast } from './utils';
+import { $, $opt, clamp, deepCopy, elementIconEl, iconEl, toast } from './utils';
 import { getEl, selectedEls, curveFillOn, curveStrokeOn, makeStroke } from './model';
 import { selectionAABB } from './geometry';
-import { syncElement, syncNode } from './render';
+import { renderAll, syncElement, syncNode } from './render';
+import { updateUI } from './panel';
 import { commit } from './history';
 
 export type StyleMode = 'all' | 'fill' | 'strokeWidth' | 'stroke' | 'width';
-interface SourceStroke { color: string; width: number; gradient: StrokeGradient | null; }
+interface SourceStroke { color: string; width: number; gradient: StrokeGradient | null; align: StrokeAlign; }
 
 const STYLE_OPTIONS: { mode: StyleMode; icon: string; label: string; short: string; cls?: string }[] = [
     { mode: 'all', icon: 'style-all', label: '全部样式：填充 + 描边 + 粗细', short: '全部样式', cls: 'style-all' },
@@ -17,6 +19,94 @@ const STYLE_OPTIONS: { mode: StyleMode; icon: string; label: string; short: stri
     { mode: 'stroke', icon: 'style-stroke', label: '应用描边', short: '描边' },
     { mode: 'width', icon: 'style-width', label: '应用描边粗细', short: '粗细' }
 ];
+
+/** 可互相转换的轮廓类形状（线条 / 曲线 / 文本 / 图片 / 布尔不参与） */
+const CONVERTIBLE: ElementType[] = [...SHAPE_MENU_BASIC, 'arrow', ...VECTOR_SHAPE_TYPES, ...FLUID_SHAPE_TYPES];
+
+export function canConvertShape(el: CanvasElement): boolean {
+    return CONVERTIBLE.includes(el.type);
+}
+
+/** 纯模型转换：保留填充/描边/投影/几何，仅替换轮廓类型 */
+export function convertElementShape(e: CanvasElement, type: ElementType): boolean {
+    if (!CONVERTIBLE.includes(type)) return false;
+    const oldLabel = TYPE_LABELS[e.type] || '';
+    e.type = type;
+    e.shapeParams = {};
+    if (oldLabel && (e.name === oldLabel || e.name.startsWith(oldLabel + ' '))) {
+        e.name = TYPE_LABELS[type] + e.name.slice(oldLabel.length);
+    }
+    return true;
+}
+
+export function convertSelectedShape(type: ElementType): void {
+    if (!CONVERTIBLE.includes(type)) return;
+    const els = selectedEls().filter(e => !e.locked && canConvertShape(e));
+    if (!els.length) { toast('请先选中一个可转换的形状', 'error'); return; }
+    const newLabel = TYPE_LABELS[type];
+    els.forEach(e => { convertElementShape(e, type); });
+    renderAll();
+    updateUI();
+    commit();
+    syncSelectionTools();
+    toast(els.length > 1 ? `已转换 ${els.length} 个形状为${newLabel}` : `已转换为${newLabel}`, 'success');
+}
+
+let convertMenuBound = false;
+function hideConvertMenu(): void {
+    const menu = $opt('shapeConvertMenu');
+    if (menu) menu.hidden = true;
+}
+function openConvertMenu(): void {
+    const menu = $opt('shapeConvertMenu');
+    const anchor = $opt('selectionTools');
+    const el = selectedEls()[0];
+    if (!menu || !anchor || !el || !canConvertShape(el) || el.locked) return;
+    menu.textContent = '';
+    const hint = document.createElement('div');
+    hint.className = 'convert-hint';
+    hint.textContent = '转换保留填充、描边、投影与位置尺寸';
+    menu.appendChild(hint);
+    CONVERTIBLE.forEach(type => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.title = '转换为' + TYPE_LABELS[type];
+        b.setAttribute('aria-label', b.title);
+        b.classList.toggle('active', el.type === type);
+        b.appendChild(elementIconEl(type));
+        const span = document.createElement('span');
+        span.textContent = TYPE_LABELS[type];
+        b.appendChild(span);
+        b.addEventListener('click', ev => {
+            ev.preventDefault(); ev.stopPropagation();
+            hideConvertMenu();
+            if (el.type !== type) convertSelectedShape(type);
+        });
+        menu.appendChild(b);
+    });
+    menu.hidden = false;
+    menu.style.left = '0px';
+    menu.style.top = '0px';
+    const mr = menu.getBoundingClientRect();
+    const vr = $('viewport').getBoundingClientRect();
+    const ar = anchor.getBoundingClientRect();
+    let x = ar.left;
+    let y = ar.bottom + 6;
+    if (x + mr.width > vr.right - 8) x = vr.right - mr.width - 8;
+    if (y + mr.height > vr.bottom - 8) y = ar.top - mr.height - 6;
+    menu.style.left = clamp(x, vr.left + 8, Math.max(vr.left + 8, vr.right - mr.width - 8)) + 'px';
+    menu.style.top = clamp(y, vr.top + 8, Math.max(vr.top + 8, vr.bottom - mr.height - 8)) + 'px';
+    if (!convertMenuBound) {
+        convertMenuBound = true;
+        document.addEventListener('pointerdown', ev => {
+            const m = $opt('shapeConvertMenu');
+            if (!m || m.hidden) return;
+            const t = ev.target as HTMLElement;
+            if (t.closest('.shape-convert-menu') || t.closest('#btnQuickConvert')) return;
+            hideConvertMenu();
+        }, true);
+    }
+}
 
 let measureRefresh: (() => void) | null = null;
 let styleMenuTargetId: string | null = null;
@@ -35,29 +125,30 @@ function sourceHasFill(el: CanvasElement): boolean {
 }
 
 function sourceStroke(el: CanvasElement): SourceStroke | null {
-    if (el.type === 'text') return null;
     if (el.type === 'line') {
-        return { color: el.line?.color || '#000000', width: Math.max(0, el.line?.width || 0), gradient: null };
+        return { color: el.line?.color || '#000000', width: Math.max(0, el.line?.width || 0), gradient: null, align: 'center' };
     }
     if (el.type === 'curve') {
         if (!curveStrokeOn(el)) return null;
         return {
             color: el.line?.color || '#000000',
             width: Math.max(0, el.line?.width || 0),
-            gradient: el.stroke?.gradient ? deepCopy(el.stroke.gradient) : null
+            gradient: el.stroke?.gradient ? deepCopy(el.stroke.gradient) : null,
+            align: 'center'
         };
     }
     if (!el.stroke || !(el.stroke.width > 0)) return null;
     return {
         color: el.stroke.color,
         width: el.stroke.width,
-        gradient: el.stroke.gradient ? deepCopy(el.stroke.gradient) : null
+        gradient: el.stroke.gradient ? deepCopy(el.stroke.gradient) : null,
+        align: el.stroke.align || 'center'
     };
 }
 
 function targetSupports(target: CanvasElement, mode: StyleMode): boolean {
     if (mode === 'fill') return target.type !== 'line' && !(target.type === 'curve' && !target.curve?.closed);
-    return target.type !== 'text';
+    return true;
 }
 
 export function styleOptionEnabled(source: CanvasElement, target: CanvasElement, mode: StyleMode): boolean {
@@ -86,6 +177,7 @@ function applyStroke(target: CanvasElement, stroke: SourceStroke): void {
     target.stroke = Object.assign({}, prev, {
         color: stroke.color,
         gradient,
+        align: stroke.align,
         width: prev.width > 0 ? prev.width : 1
     });
 }
@@ -336,8 +428,23 @@ export function syncSelectionTools(): void {
 
     const isolateBtn = $opt<HTMLButtonElement>('btnQuickIsolate');
     const styleBtn = $opt<HTMLButtonElement>('btnQuickStyle');
+    const convertBtn = $opt<HTMLButtonElement>('btnQuickConvert');
     const sep = $opt('quickToolsSep');
     const single = selected.length === 1;
+    const convertible = single && !selected[0].locked && canConvertShape(selected[0]);
+    if (convertBtn) {
+        convertBtn.hidden = !convertible;
+        if (convertBtn.dataset.icon !== 'convert') {
+            convertBtn.textContent = '';
+            convertBtn.appendChild(iconEl('convert'));
+            convertBtn.dataset.icon = 'convert';
+        }
+        const menu = $opt('shapeConvertMenu');
+        convertBtn.classList.toggle('active', !!menu && !menu.hidden);
+        convertBtn.title = '转换形状：改为平行四边形、梯形、星形等';
+        convertBtn.setAttribute('aria-label', convertBtn.title);
+        if (!convertible) hideConvertMenu();
+    }
     if (isolateBtn) {
         const icon = state.isolating ? 'eye' : 'eye-off';
         if (isolateBtn.dataset.icon !== icon) {
@@ -393,6 +500,13 @@ export function bindSelectionTools(): void {
     $('btnQuickIsolate').addEventListener('click', ev => {
         ev.preventDefault(); ev.stopPropagation();
         toggleIsolation();
+    });
+    $('btnQuickConvert').addEventListener('click', ev => {
+        ev.preventDefault(); ev.stopPropagation();
+        const menu = $opt('shapeConvertMenu');
+        if (menu && !menu.hidden) hideConvertMenu();
+        else openConvertMenu();
+        syncSelectionTools();
     });
     $('btnQuickStyle').addEventListener('click', ev => {
         ev.preventDefault(); ev.stopPropagation();

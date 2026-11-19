@@ -6,7 +6,7 @@ import { $, iconEl, round2 } from './utils';
 import { getEl, sortedElements, curveFillOn, curveStrokeOn, curvePathD, lineDashArray, curveNodeHasIn, curveNodeHasOut } from './model';
 import { fillToCSS, shapeFilter, strokeOverlayMarkup, strokeDefMarkup, wavyDataURI, lineHeightFor } from './style';
 import { fillDefs } from './vector-export';
-import { fontForRun, layoutText } from './exporter';
+import { fontForRun, layoutText, textStrokeLayers } from './exporter';
 import { finishTextEdit } from './richtext';
 import { renderPenDraft } from './interaction';
 import { refreshStudioPanels, onViewChanged } from './tools';
@@ -49,6 +49,10 @@ export function buildNode(el: CanvasElement): HTMLDivElement {
         const t = document.createElement('div');
         t.className = 'text-content';
         d.appendChild(t);
+        const sc = document.createElement('canvas');
+        sc.className = 'text-stroke-canvas';
+        sc.setAttribute('aria-hidden', 'true');
+        d.appendChild(sc);
     }
     ['nw', 'ne', 'sw', 'se', 'n', 's', 'e', 'w'].forEach(dir => {
         const r = document.createElement('div');
@@ -89,15 +93,33 @@ export function renderRuns(container: HTMLElement, el: CanvasElement): void {
     container.style.lineHeight = String(t.lineHeight);
     container.style.letterSpacing = t.letterSpacing + 'px';
     container.style.textAlign = t.align;
+    container.style.textIndent = t.indent > 0 ? t.indent + 'px' : '0';
     container.style.color = el.fill.enabled ? el.fill.color : 'transparent';
+    let para: HTMLElement = document.createElement('div');
+    para.className = 'text-para';
+    container.appendChild(para);
+    const newPara = (): void => {
+        para = document.createElement('div');
+        para.className = 'text-para';
+        if (t.paraSpacing > 0) para.style.paddingTop = t.paraSpacing + 'px';
+        container.appendChild(para);
+    };
     t.runs.forEach(run => {
-        const span = document.createElement('span');
-        span.textContent = run.text;
-        if (run.bold) { span.style.fontWeight = '700'; span.dataset.b = '1'; }
-        if (run.italic) { span.style.fontStyle = 'italic'; span.dataset.i = '1'; }
-        if (run.underline) { span.style.textDecoration = 'underline'; span.dataset.u = '1'; }
-        if (run.color) { span.style.color = run.color; span.dataset.color = run.color; }
-        container.appendChild(span);
+        run.text.split('\n').forEach((part, pi) => {
+            if (pi > 0) newPara();
+            if (!part) return;
+            const span = document.createElement('span');
+            span.textContent = part;
+            if (run.bold) { span.style.fontWeight = '700'; span.dataset.b = '1'; }
+            if (run.italic) { span.style.fontStyle = 'italic'; span.dataset.i = '1'; }
+            if (run.underline) { span.style.textDecoration = 'underline'; span.dataset.u = '1'; }
+            if (run.color) { span.style.color = run.color; span.dataset.color = run.color; }
+            para.appendChild(span);
+        });
+    });
+    // 空段落需要占位 <br> 撑出行高（末尾段落的 br 会被 parseRuns 视为占位符）
+    container.querySelectorAll<HTMLElement>('.text-para').forEach(p => {
+        if (!p.childNodes.length) p.appendChild(document.createElement('br'));
     });
 }
 /* 离屏 DOM 测量：与编辑器 HTML 排版完全一致的宽高 */
@@ -137,8 +159,12 @@ export function applyAutoSize(el: CanvasElement): void {
     const dom = measureTextDom(el, mode === 'autoH' ? el.w : null);
     const ctx = textMeasureCtx();
     const lines = layoutText(el, maxW, (run, text) => canvasTextWidth(ctx, t, run, text));
-    const canvasH = lines.length * lh;
-    const canvasW = lines.reduce((m, ln) => Math.max(m, ln.reduce((a, tok) => a + tok.w, 0)), 0);
+    const paraBreaks = lines.reduce((n, ln, i) => n + (i > 0 && ln.paraStart ? 1 : 0), 0);
+    const canvasH = lines.length * lh + paraBreaks * t.paraSpacing;
+    const canvasW = lines.reduce((m, ln) => {
+        const total = ln.reduce((a, tok) => a + tok.w, 0);
+        return Math.max(m, total + (ln.paraStart ? t.indent : 0));
+    }, 0);
     if (mode === 'autoWH') el.w = round2(Math.max(20, dom.w, canvasW) + 2);
     el.h = round2(Math.max(lh, dom.h, canvasH));
 }
@@ -216,6 +242,7 @@ export function syncNode(el: CanvasElement, d: HTMLDivElement): void {
         ss.borderRadius = '0';
         const tc = d.querySelector<HTMLElement>('.text-content');
         if (tc && !(state.isTextEditing && state.editingId === el.id)) renderRuns(tc, el);
+        syncTextStrokeCanvas(el, d);
     } else {
         ss.background = fillToCSS(el.fill);
         if (el.image && state.assets[el.image.assetId]) {
@@ -239,6 +266,45 @@ export function syncNode(el: CanvasElement, d: HTMLDivElement): void {
         ov.innerHTML = strokeOverlayMarkup(el, el.w, renderH);
         const f = shapeFilter(el);
         ov.style.filter = f || '';
+    }
+}
+/** 文本描边显示层：与 PNG 导出共用同一套分层渲染，保证内外对齐一致 */
+function syncTextStrokeCanvas(el: CanvasElement, d: HTMLDivElement): void {
+    const cv = d.querySelector<HTMLCanvasElement>('.text-stroke-canvas');
+    if (!cv) return;
+    const st = el.stroke;
+    const enabled = !!st && st.width > 0;
+    d.classList.toggle('has-text-stroke', enabled);
+    if (!enabled || (state.isTextEditing && state.editingId === el.id)) {
+        cv.style.display = 'none';
+        return;
+    }
+    const maxDim = Math.max(1, el.w, el.h) + Math.min(st!.width, 60) * 2 + 16;
+    const scale = Math.min(2, Math.max(0.5, 4096 / maxDim));
+    const layers = textStrokeLayers(el, scale);
+    if (!layers) { cv.style.display = 'none'; return; }
+    cv.style.display = 'block';
+    if (cv.width !== layers.fill.width) cv.width = layers.fill.width;
+    if (cv.height !== layers.fill.height) cv.height = layers.fill.height;
+    cv.style.width = (el.w + layers.pad * 2) + 'px';
+    cv.style.height = (el.h + layers.pad * 2) + 'px';
+    cv.style.left = (-layers.pad) + 'px';
+    cv.style.top = (-layers.pad) + 'px';
+    const c = cv.getContext('2d');
+    if (!c) return;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.clearRect(0, 0, cv.width, cv.height);
+    c.drawImage(layers.fill, 0, 0);
+    c.drawImage(layers.stroke, 0, 0);
+    if (!cv.dataset.fontHooked) {
+        cv.dataset.fontHooked = '1';
+        const fonts = document.fonts;
+        if (fonts && fonts.ready) {
+            void fonts.ready.then(() => {
+                const e2 = getEl(el.id), d2 = nodeMap.get(el.id);
+                if (e2 && d2) syncTextStrokeCanvas(e2, d2);
+            });
+        }
     }
 }
 /** 同步曲线路径、节点方块、控制柄与切线。节点数量变化时重建手柄 DOM */

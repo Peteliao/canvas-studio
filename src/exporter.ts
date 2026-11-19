@@ -34,25 +34,34 @@ export function fontForRun(run: TextRun, t: TextStyle): string {
 /* 排版原子：CJK 逐字可断行，西文按单词，空白独立成原子 */
 const TEXT_ATOM_RE = /([⺀-﫿！-｠、-〿])|([^\s⺀-﫿！-｠、-〿]+)|(\s+)/g;
 
-/** 贪心换行排版：编辑器自动尺寸与 PNG/SVG 导出共用同一套行模型 */
+/** 贪心换行排版：编辑器自动尺寸与 PNG/SVG 导出共用同一套行模型
+ *  paraStart 标记段落首行（用于段间距与首行缩进） */
 export function layoutText(el: CanvasElement, maxW: number, measure: (run: TextRun, text: string) => number): TextLine[] {
     const lines: TextLine[] = [[]];
+    lines[0].paraStart = true;
     let cur = 0;
-    const newline = (forced?: boolean) => { if (forced) lines[lines.length - 1].forcedEnd = true; lines.push([]); cur = 0; };
+    const newline = (forced?: boolean) => {
+        if (forced) lines[lines.length - 1].forcedEnd = true;
+        const next: TextLine = [];
+        next.paraStart = !!forced;
+        lines.push(next);
+        cur = 0;
+    };
+    const cap = (): number => Math.max(1, maxW - (lines[lines.length - 1].paraStart ? el.text!.indent : 0));
     el.text!.runs.forEach(run => {
         run.text.split('\n').forEach((part, pi) => {
             if (pi > 0) newline(true);
             if (!part) return;
             (part.match(TEXT_ATOM_RE) || []).forEach(atom => {
                 const w = measure(run, atom);
-                if (cur + w > maxW + 0.5 && cur > 0) {
+                if (cur + w > cap() + 0.5 && cur > 0) {
                     newline();
                     if (/^\s+$/.test(atom)) return;
                 }
-                if (w > maxW) {
+                if (w > cap()) {
                     for (const ch of atom) {
                         const cw = measure(run, ch);
-                        if (cur + cw > maxW + 0.5 && cur > 0) newline();
+                        if (cur + cw > cap() + 0.5 && cur > 0) newline();
                         lines[lines.length - 1].push({ run, text: ch, w: cw });
                         cur += cw;
                     }
@@ -66,35 +75,95 @@ export function layoutText(el: CanvasElement, maxW: number, measure: (run: TextR
     return lines;
 }
 
-function drawTextRuns(ctx: CanvasRenderingContext2D, el: CanvasElement): void {
+type TextPaintMode = 'fill' | 'stroke' | 'mask';
+
+function drawTextRuns(ctx: CanvasRenderingContext2D, el: CanvasElement, mode: TextPaintMode = 'fill'): void {
     const t = el.text!;
     const lh = t.fontSize * t.lineHeight;
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
+    ctx.lineJoin = 'round';
     const lines = layoutText(el, el.w, (run, text) => canvasTextWidth(ctx, t, run, text));
+    let y = 0;
     lines.forEach((tokens, lineIndex) => {
+        if (lineIndex > 0 && tokens.paraStart) y += t.paraSpacing;
+        const inset = tokens.paraStart ? Math.min(t.indent, el.w) : 0;
+        const avail = Math.max(1, el.w - inset);
         const total = tokens.reduce((a, tok) => a + tok.w, 0);
         const gaps = tokens.length - 1;
         const justify = t.align === 'justify' && lineIndex < lines.length - 1 && !lines[lineIndex].forcedEnd && gaps > 0;
-        const extra = justify ? (el.w - total) / gaps : 0;
-        let x = t.align === 'center' ? (el.w - total) / 2 : t.align === 'right' ? el.w - total : 0;
-        const y = lineIndex * lh;
+        const extra = justify ? Math.max(0, avail - total) / gaps : 0;
+        let x = t.align === 'center' ? inset + (avail - total) / 2 : t.align === 'right' ? el.w - total : inset;
         tokens.forEach(tok => {
             const r = tok.run;
             ctx.font = fontForRun(r, t);
-            ctx.fillStyle = r.color || (el.fill.enabled ? el.fill.color : 'rgba(0,0,0,0)');
+            if (mode === 'fill') ctx.fillStyle = r.color || (el.fill.enabled ? el.fill.color : 'rgba(0,0,0,0)');
+            else if (mode === 'mask') ctx.fillStyle = '#000';
             // 逐字符绘制以支持字间距
             let cx = x;
             for (const ch of tok.text) {
-                ctx.fillText(ch, cx, y);
+                if (mode === 'stroke') ctx.strokeText(ch, cx, y);
+                else ctx.fillText(ch, cx, y);
                 cx += ctx.measureText(ch).width + t.letterSpacing;
             }
-            if (r.underline) {
+            if (mode === 'fill' && r.underline) {
                 ctx.fillRect(x, y + t.fontSize * 0.95, tok.w, Math.max(1, t.fontSize / 16));
             }
             x += tok.w + extra;
         });
+        y += lh;
     });
+}
+
+export interface TextStrokeLayers { pad: number; scale: number; fill: HTMLCanvasElement; stroke: HTMLCanvasElement; }
+
+/** 文本描边分层渲染：填充层 + 描边层（外/内对齐用字形遮罩裁掉半边线宽） */
+export function textStrokeLayers(el: CanvasElement, scale: number): TextStrokeLayers | null {
+    const st = el.stroke;
+    if (!st || st.width <= 0 || el.type !== 'text') return null;
+    const s = clamp(finite(scale, 1), 0.25, 4);
+    const padPx = Math.max(1, Math.ceil((Math.min(st.width, 60) + 8) * s));
+    const cw = Math.max(1, Math.round(el.w * s)) + padPx * 2;
+    const ch = Math.max(1, Math.round(el.h * s)) + padPx * 2;
+    const make = (): [HTMLCanvasElement, CanvasRenderingContext2D] => {
+        const c = document.createElement('canvas');
+        c.width = cw; c.height = ch;
+        const c2 = c.getContext('2d');
+        if (!c2) throw new Error('Canvas 2D context unavailable');
+        c2.scale(s, s);
+        c2.translate(padPx / s, padPx / s);
+        c2.textBaseline = 'top';
+        return [c, c2];
+    };
+    const [fill, fc] = make();
+    drawTextRuns(fc, el, 'fill');
+    const [stroke, sc2] = make();
+    const stW = Math.min(st.width, 60);
+    const eff = st.align === 'center' ? stW : stW * 2;
+    sc2.strokeStyle = (st.gradient && canvasGradient(sc2, st.gradient.mode, st.gradient.angle, st.gradient.posX, st.gradient.posY, st.gradient.stops, 1, el.w, el.h)) || st.color;
+    sc2.lineWidth = eff;
+    drawTextRuns(sc2, el, 'stroke');
+    if (st.align !== 'center') {
+        // 字形遮罩必须整段一次性合成：逐字 destination-in 会让相邻字形取交集而清空描边层
+        const [mask, mc] = make();
+        drawTextRuns(mc, el, 'mask');
+        sc2.save();
+        sc2.setTransform(1, 0, 0, 1, 0, 0);
+        sc2.globalCompositeOperation = st.align === 'outside' ? 'destination-out' : 'destination-in';
+        sc2.drawImage(mask, 0, 0);
+        sc2.restore();
+    }
+    return { pad: padPx / s, scale: s, fill, stroke };
+}
+
+function drawTextElement(ctx: CanvasRenderingContext2D, el: CanvasElement): void {
+    const layers = textStrokeLayers(el, ctx.__exportScale || 1);
+    if (!layers) { drawTextRuns(ctx, el); return; }
+    ctx.drawImage(layers.fill, -layers.pad, -layers.pad, el.w + layers.pad * 2, el.h + layers.pad * 2);
+    ctx.save();
+    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+    ctx.drawImage(layers.stroke, -layers.pad, -layers.pad, el.w + layers.pad * 2, el.h + layers.pad * 2);
+    ctx.restore();
 }
 
 function drawLineElement(ctx: CanvasRenderingContext2D, el: CanvasElement): void {
@@ -163,7 +232,7 @@ function drawCurveElement(ctx: CanvasRenderingContext2D, el: CanvasElement): voi
 async function drawElementContent(c: CanvasRenderingContext2D, el: CanvasElement): Promise<void> {
     if (el.type === 'line') { drawLineElement(c, el); return; }
     if (el.type === 'curve') { drawCurveElement(c, el); return; }
-    if (el.type === 'text') { drawTextRuns(c, el); return; }
+    if (el.type === 'text') { drawTextElement(c, el); return; }
     c.save();
     shapePath(c, el, el.w, el.h);
     c.clip();
@@ -219,15 +288,27 @@ export async function drawExportElement(ctx: CanvasRenderingContext2D, el: Canva
     } else {
         await drawElementContent(ctx, el);
     }
-    // N5：描边（贴在形状外轮廓上，异形用 clipPath 多边形）
+    // N5：描边（支持居外 / 居中 / 居内三种对齐）
     if (el.stroke && el.stroke.width > 0 && el.type !== 'text' && el.type !== 'line') {
         ctx.save();
-        ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
-        const sg = el.stroke.gradient;
-        ctx.strokeStyle = (sg && canvasGradient(ctx, sg.mode, sg.angle, sg.posX, sg.posY, sg.stops, 1, el.w, h)) || el.stroke.color;
-        ctx.lineWidth = Math.min(el.stroke.width, 40);
-        if (el.stroke.style === 'dashed') ctx.setLineDash([el.stroke.width * 3, el.stroke.width * 2]);
-        else if (el.stroke.style === 'dotted') ctx.setLineDash([el.stroke.width, el.stroke.width * 1.5]);
+        ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+        const st = el.stroke, align = st.align || 'center';
+        const sg = st.gradient;
+        ctx.strokeStyle = (sg && canvasGradient(ctx, sg.mode, sg.angle, sg.posX, sg.posY, sg.stops, 1, el.w, h)) || st.color;
+        const baseW = Math.min(st.width, 40);
+        ctx.lineWidth = align === 'center' ? baseW : baseW * 2;
+        if (st.style === 'dashed') ctx.setLineDash([st.width * 3, st.width * 2]);
+        else if (st.style === 'dotted') ctx.setLineDash([st.width, st.width * 1.5]);
+        if (align !== 'center') {
+            const pad = baseW * 2 + 8;
+            shapePath(ctx, el, el.w, el.h);
+            if (align === 'outside') {
+                ctx.rect(-pad, -pad, el.w + pad * 2, h + pad * 2);
+                ctx.clip('evenodd');
+            } else {
+                ctx.clip();
+            }
+        }
         shapePath(ctx, el, el.w, el.h);
         ctx.stroke();
         ctx.setLineDash([]);

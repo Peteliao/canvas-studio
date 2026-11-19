@@ -173,6 +173,8 @@ export function updateTextStyle(prop: string): void {
         } else if (prop === 'size') t.fontSize = clamp(finite($<HTMLInputElement>('fontSizeInput').value, t.fontSize), 1, 500);
         else if (prop === 'lineHeight') t.lineHeight = clamp(finite($<HTMLInputElement>('lineHeightInput').value, t.lineHeight), 0.3, 5);
         else if (prop === 'spacing') t.letterSpacing = clamp(finite($<HTMLInputElement>('letterSpacingInput').value, 0), -20, 100);
+        else if (prop === 'paraSpacing') t.paraSpacing = clamp(finite($<HTMLInputElement>('paraSpacingInput').value, t.paraSpacing), 0, 300);
+        else if (prop === 'indent') t.indent = clamp(finite($<HTMLInputElement>('textIndentInput').value, t.indent), 0, 600);
         else if (prop === 'weight') { const w = Number($<HTMLSelectElement>('fontWeightInput').value); if (WEIGHTS.includes(w)) t.fontWeight = w as FontWeight; }
         else if (prop === 'bold') t.fontWeight = t.fontWeight >= 700 ? 400 : 700;
         else if (prop === 'italic') { const on = !t.runs.every(r => r.italic); t.runs.forEach(r => { r.italic = on; }); }
