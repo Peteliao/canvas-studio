@@ -7,7 +7,7 @@ import { validateProject, snapshotJSON, makeFill, makeLine, makeStroke, makeShad
     curvePathD, curveFillOn, curveStrokeOn, validateGuide, curveSegPts, splitCubic, cubicAt, sortedElements,
     curveNodesBox, curveLocalBox, selectedEls } from './model';
 import { elementSnapPoints, nearestSnapPoint, nearestPointSnap } from './snappoints';
-import { applyEffectTint, fillToCSS, shapeFilter, lineHeightFor, wavyDashSpec, wavyDataURI, strokeOverlayMarkup } from './style';
+import { applyEffectTint, fillToCSS, shapeFilter, lineHeightFor, wavyDashSpec, wavyDataURI, strokeOverlayMarkup, boundaryMarkup } from './style';
 import { buildSVG, buildPDF } from './vector-export';
 import { SHAPE_PARAM_SPECS, shapePoints, shapeClipPath, sanitizeShapeParams } from './shapes';
 import { getAABB, setPivot, elementLocalToWorld, elementWorldToLocal } from './geometry';
@@ -472,6 +472,23 @@ export function runSelfTest(): void {
             setSelection(prevSel);
         }
         return '悬停即时预览 · 移出按引用还原';
+    });
+    check('描边边界虚线缩放适配', () => {
+        const el = buildElement('rect', 0, 0);
+        el.w = 200; el.h = 120;
+        el.stroke = makeStroke({ width: 1, color: '#111111' });
+        const guideScreen = (zoom: number): number => {
+            const m = boundaryMarkup(el, el.w, el.h, zoom).match(/stroke="#4f6bff" stroke-width="([\d.]+)"/);
+            return m ? Number(m[1]) * zoom : 0;
+        };
+        const g1 = guideScreen(1), g8 = guideScreen(8);
+        assert(g1 > 0 && g8 > 0, '边界虚线缺失');
+        assert(g1 < 1 && g8 < 8, '放大后虚线比 1px 描边还粗');
+        assert(g8 <= 1.6 + 0.01, '放大后虚线未收敛到 1.6px 屏幕宽度');
+        assert(boundaryMarkup(el, el.w, el.h, 8).includes('stroke-dasharray="0.63 0.5"'), '虚线节距未随缩放换算');
+        el.stroke = makeStroke({ width: 12, color: '#111111' });
+        assert(guideScreen(1) <= 1.6 + 0.01, '粗描边时虚线仍过粗');
+        return '屏幕恒定细线 · 不超描边宽度 · 节距随缩放折算';
     });
     check('形状转换', () => {
         const el = buildElement('rect', 10, 20);

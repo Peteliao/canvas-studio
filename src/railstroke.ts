@@ -4,7 +4,7 @@ import { $opt, clamp, finite } from './utils';
 import { getEl, makeLine, makeStroke, selectedEls } from './model';
 import { syncElement } from './render';
 import { boundaryMarkup } from './style';
-import { nodeMap } from './state';
+import { nodeMap, state } from './state';
 import { commit, hasPendingCommit, scheduleCommit } from './history';
 import type { CanvasElement, Stroke, StrokeAlign } from './types';
 
@@ -55,7 +55,7 @@ function paintBoundary(el: CanvasElement): void {
         d.appendChild(svg);
     }
     svg.setAttribute('viewBox', `-2 -2 ${el.w + 4} ${el.h + 4}`);
-    svg.innerHTML = boundaryMarkup(el, el.w, el.h);
+    svg.innerHTML = boundaryMarkup(el, el.w, el.h, state.zoom);
 }
 
 /** 悬停试穿：快照原描边后临时改 align，只重绘、不落历史；点击时再正式提交 */
