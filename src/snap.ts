@@ -119,4 +119,34 @@ export function drawSnapGuides(guides: SnapLine[] | null, point?: SnapPoint | nu
     layer.appendChild(p);
 }
 
+const ANCHOR_DOT_KINDS = new Set<SnapPoint['kind']>(['center', 'golden', 'quadrant']);
+/** Ctrl 锚点候选：中心 / 黄金分割 / 象限点用轻量圆点提示，最近的候选显示类型标签 */
+export function drawAnchorCandidates(points: SnapPoint[], hot: SnapPoint | null): void {
+    const layer = $opt('anchorsLayer');
+    if (!layer) return;
+    layer.textContent = '';
+    points.forEach(p => {
+        if (!ANCHOR_DOT_KINDS.has(p.kind) || p === hot) return;
+        const d = document.createElement('div');
+        d.className = 'anchor-dot anchor-' + p.kind;
+        d.style.left = (p.x * state.zoom + state.pan.x) + 'px';
+        d.style.top = (p.y * state.zoom + state.pan.y) + 'px';
+        layer.appendChild(d);
+    });
+    if (!hot) return;
+    const p = document.createElement('div');
+    p.className = 'snap-point snap-' + hot.kind;
+    const sx = hot.x * state.zoom + state.pan.x;
+    p.style.left = sx + 'px';
+    p.style.top = (hot.y * state.zoom + state.pan.y) + 'px';
+    if (sx > layer.clientWidth - 90) p.classList.add('flip');
+    const tag = document.createElement('span');
+    tag.className = 'snap-point-label';
+    tag.textContent = hot.label;
+    p.appendChild(tag);
+    layer.appendChild(p);
+}
+
+export function clearAnchorCandidates(): void { const l = $opt('anchorsLayer'); if (l) l.textContent = ''; }
+
 export function clearSnapGuides(): void { const l = $opt('guidesLayer'); if (l) l.textContent = ''; }

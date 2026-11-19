@@ -72,6 +72,15 @@ export function elementSnapPoints(el: CanvasElement, x = el.x, y = el.y): SnapPo
     return out;
 }
 
+export function curveNodeSnapPoint(el: CanvasElement, i: number): SnapPoint | null {
+    const nodes = el.curve?.nodes;
+    if (el.type !== 'curve' || !nodes || !nodes[i] || !el.visible) return null;
+    const n = nodes[i];
+    const p = localToWorld(el, n.x * el.w, n.y * el.h, el.x, el.y);
+    const end = i === 0 || i === nodes.length - 1;
+    return { x: p.x, y: p.y, kind: end ? 'endpoint' : 'node', label: end ? '端点' : '节点', elementId: el.id };
+}
+
 export function canvasSnapPoints(): SnapPoint[] {
     const cw = state.model.canvas.w, ch = state.model.canvas.h;
     const out: SnapPoint[] = [

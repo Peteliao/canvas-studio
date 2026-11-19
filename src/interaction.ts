@@ -22,8 +22,8 @@ import { setTool, refreshStudioUI } from './tools';
 import { setToggleButton } from './theme';
 import { selectGuide, drawGuides, isOverRuler, deleteGuide, guideGeom } from './guides';
 import { drawMeasure } from './measure';
-import { applyDragSnap, drawSnapGuides, clearSnapGuides } from './snap';
-import { nearestSnapPoint, SNAP_POINT_PX } from './snappoints';
+import { applyDragSnap, drawSnapGuides, clearSnapGuides, drawAnchorCandidates, clearAnchorCandidates } from './snap';
+import { nearestSnapPoint, elementSnapPoints, curveNodeSnapPoint, SNAP_POINT_PX } from './snappoints';
 import { updateLineStyle } from './styles';
 
 type RotateInteraction = Extract<Interaction, { kind: 'rotate' }>;
@@ -70,6 +70,49 @@ export function curveNorm(el: CanvasElement, loc: Point): Point {
         y: clamp(round3(loc.y / Math.max(1, el.h)), -3, 4)
     };
 }
+
+const ANCHOR_HOVER_PX = 16, ANCHOR_GRAB_PX = 16;
+
+function clearAnchorHover(): void {
+    clearAnchorCandidates();
+    $('viewport').classList.remove('anchor-hot');
+}
+
+function updateAnchorHover(e: PointerEvent): void {
+    if (state.tool !== 'select' || !(e.ctrlKey || e.metaKey) || !state.selection.length) {
+        clearAnchorHover();
+        return;
+    }
+    const target = e.target as HTMLElement | null;
+    if (!target || isChromeUI(target)) { clearAnchorHover(); return; }
+    const d = target.closest('.canvas-element');
+    const el = d ? getEl(d.getAttribute('data-id') || '') : null;
+    if (!el || el.locked || !state.selection.includes(el.id)) { clearAnchorHover(); return; }
+    const pts = elementSnapPoints(el);
+    const hot = nearestSnapPoint(clientToWorld(e.clientX, e.clientY), ANCHOR_HOVER_PX / state.zoom, new Set(), pts);
+    drawAnchorCandidates(pts, hot);
+    $('viewport').classList.toggle('anchor-hot', !!hot);
+}
+
+/** 以物件自身的角点 / 节点 / 中心 / 黄金分割等特征点为锚点拖动整个选区 */
+function startAnchorDrag(e: PointerEvent, anchor: SnapPoint, pendingNodeClick?: { id: string; i: number }): boolean {
+    const box = selectionAABB();
+    if (!box) return false;
+    const items = selectedEls().filter(x => !x.locked).map(x => ({ id: x.id, x: x.x, y: x.y }));
+    if (!items.length) return false;
+    if (pendingNodeClick) {
+        state.nodeSel = { id: pendingNodeClick.id, i: pendingNodeClick.i };
+        syncElement(pendingNodeClick.id);
+    }
+    state.interaction = {
+        kind: 'drag', startX: e.clientX, startY: e.clientY, startBox: box, items, anchor,
+        ...(pendingNodeClick ? { pendingNodeClick } : {})
+    };
+    clearAnchorHover();
+    $('viewport').classList.add('anchor-drag');
+    e.preventDefault();
+    return true;
+}
 /** 平滑节点：让两侧控制柄共线（保留各自长度） */
 export function smoothNodeHandles(el: CanvasElement, i: number): void {
     const n = el.curve!.nodes[i];
@@ -88,6 +131,16 @@ export function smoothNodeHandles(el: CanvasElement, i: number): void {
         n.ox = clamp(round3(n.x * 2 - n.ix), -3, 4);
         n.oy = clamp(round3(n.y * 2 - n.iy), -3, 4);
     }
+}
+
+function toggleCurveNodeType(el: CanvasElement, i: number): void {
+    const n = el.curve?.nodes[i];
+    if (!n) return;
+    n.t = n.t === 'cusp' ? 'smooth' : 'cusp';
+    if (n.t === 'smooth') smoothNodeHandles(el, i);
+    state.nodeSel = { id: el.id, i };
+    syncElement(el.id);
+    updateCurveNodePanel(el);
 }
 /** 拖动一侧控制柄后，另一侧保持共线（平滑节点），保留其原长度 */
 export function mirrorCurveHandle(n: CurveNode, moved: HandleSide): void {
@@ -165,11 +218,13 @@ export function initCanvasInteraction(): void {
 
     window.addEventListener('pointerdown', onPointerDown);
     const syncAnchorCursor = (e: KeyboardEvent): void => {
-        viewport.classList.toggle('anchor-ready', !!e.ctrlKey || !!e.metaKey);
+        const on = !!e.ctrlKey || !!e.metaKey;
+        viewport.classList.toggle('anchor-ready', on);
+        if (!on) clearAnchorHover();
     };
     document.addEventListener('keydown', syncAnchorCursor);
     document.addEventListener('keyup', syncAnchorCursor);
-    window.addEventListener('blur', () => viewport.classList.remove('anchor-ready'));
+    window.addEventListener('blur', () => { viewport.classList.remove('anchor-ready'); clearAnchorHover(); });
     // 从标尺拖出辅助线：上标尺→水平线，左标尺→垂直线；拖回标尺放弃/删除
     ([['rulerH', 0], ['rulerV', 90]] as [string, number][]).forEach(([id, angle]) => {
         $(id).addEventListener('pointerdown', e => {
@@ -272,6 +327,7 @@ function isChromeUI(target: HTMLElement): boolean {
 }
 function onPointerDown(e: PointerEvent): void {
     if (e.button !== 0) return;
+    clearAnchorHover();
     const target = e.target as HTMLElement;
     // 颜料桶下尺寸标注浮层不拦截点击，交由 bucketHitElement 穿透到下方元素
     const bucketMeasure = state.tool === 'bucket' && target.closest && target.closest('.measure-tag');
@@ -387,11 +443,11 @@ function onPointerDown(e: PointerEvent): void {
         const n = el.curve!.nodes[i];
         if (!n) return;
         if (e.ctrlKey || e.metaKey) {
-            n.t = n.t === 'cusp' ? 'smooth' : 'cusp';
-            if (n.t === 'smooth') smoothNodeHandles(el, i);
-            state.nodeSel = { id: el.id, i };
-            syncElement(el.id);
-            updateCurveNodePanel(el);
+            if (state.selection.includes(el.id)) {
+                const anchor = curveNodeSnapPoint(el, i);
+                if (anchor && startAnchorDrag(e, anchor, { id: el.id, i })) return;
+            }
+            toggleCurveNodeType(el, i);
             commit();
             e.preventDefault(); return;
         }
@@ -413,13 +469,7 @@ function onPointerDown(e: PointerEvent): void {
         if (!box) return;
         const dir = resizer.getAttribute('data-dir') || '';
         if (e.ctrlKey || e.metaKey) {
-            state.interaction = {
-                kind: 'drag', startX: e.clientX, startY: e.clientY, startBox: box,
-                items: selectedEls().filter(x => !x.locked).map(x => ({ id: x.id, x: x.x, y: x.y })),
-                anchor: resizerAnchorWorld(el, dir)
-            };
-            $('viewport').classList.add('anchor-drag');
-            e.preventDefault(); return;
+            if (startAnchorDrag(e, resizerAnchorWorld(el, dir))) return;
         }
         state.interaction = {
             kind: 'resize', dir, startX: e.clientX, startY: e.clientY,
@@ -444,6 +494,13 @@ function onPointerDown(e: PointerEvent): void {
             items: items.map(x => ({ id: x.id, x: x.x, y: x.y, w: x.w, h: x.h, rotation: x.rotation, pivotX: x.pivotX, pivotY: x.pivotY }))
         };
         e.preventDefault(); return;
+    }
+    if ((e.ctrlKey || e.metaKey) && d) {
+        const el = getEl(d.getAttribute('data-id') || '');
+        if (el && !el.locked && state.selection.includes(el.id)) {
+            const anchor = nearestSnapPoint(clientToWorld(e.clientX, e.clientY), ANCHOR_GRAB_PX / state.zoom, new Set(), elementSnapPoints(el));
+            if (anchor && startAnchorDrag(e, anchor)) return;
+        }
     }
     if (d) {
         const id = d.getAttribute('data-id') || '';
@@ -481,8 +538,9 @@ function onPointerMove(e: PointerEvent | null): void {
     if (!e) return;
     const it = state.interaction;
     if (!it) {
-        if (state.tool === 'bucket') { updateBucketHover(e); return; }
+        if (state.tool === 'bucket') { clearAnchorHover(); updateBucketHover(e); return; }
         if (state.tool === 'pen') {
+            clearAnchorHover();
             // 落点前也预览捕捉特征点；指针进入面板时收起，避免标记停留在画布上
             if (isChromeUI(e.target as HTMLElement)) { clearSnapGuides(); return; }
             const w = penPointFromEvent(e);
@@ -494,7 +552,10 @@ function onPointerMove(e: PointerEvent | null): void {
                     renderPenDraft();
                 }
             }
+            return;
         }
+        if (state.tool === 'select' && (e.ctrlKey || e.metaKey)) updateAnchorHover(e);
+        else clearAnchorHover();
         return;
     }
     if (it.kind === 'pan') {
@@ -562,6 +623,10 @@ function onPointerMove(e: PointerEvent | null): void {
         return;
     }
     if (it.kind === 'drag') {
+        if (it.pendingNodeClick) {
+            if (Math.hypot(e.clientX - it.startX, e.clientY - it.startY) < 4) return;
+            delete it.pendingNodeClick;
+        }
         const dx = (e.clientX - it.startX) / state.zoom;
         const dy = (e.clientY - it.startY) / state.zoom;
         let mx = dx, my = dy;
@@ -705,9 +770,14 @@ function onPointerMove(e: PointerEvent | null): void {
         return;
     }
 }
-export function endInteraction(): void {
+export function endInteraction(e?: PointerEvent): void {
     const it = state.interaction;
     if (!it || it.kind === 'crop') return;   // 裁剪框交互由裁剪器自行收尾，不提交画布历史
+    if (it.kind === 'drag' && it.pendingNodeClick && e?.type === 'pointerup') {
+        const p = it.pendingNodeClick;
+        const el = getEl(p.id);
+        if (el && el.type === 'curve') toggleCurveNodeType(el, p.i);
+    }
     if (it.kind === 'textcreate') {
         $('selectionBox').style.display = 'none';
         state.interaction = null;
@@ -753,6 +823,7 @@ export function endInteraction(): void {
     $('viewport').classList.remove('panning', 'anchor-drag');
     state.interaction = null;
     clearSnapGuides();
+    clearAnchorHover();
     refreshStudioUI();
 }
 /* -------------------- 曲线：节点编辑（增删 / 平滑 / 闭合 / 适配） -------------------- */

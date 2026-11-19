@@ -277,7 +277,7 @@ export function syncCurveNode(el: CanvasElement, d: HTMLDivElement, h: number): 
             const nd = document.createElement('div');
             nd.className = 'curve-node';
             nd.dataset.i = String(i);
-            nd.title = `节点 ${i + 1}：拖拽移动 · 双击删除 · Ctrl+点击切换平滑/尖角`;
+            nd.title = `节点 ${i + 1}：拖拽移动 · 双击删除 · Ctrl+点击切换平滑/尖角 · Ctrl+拖拽锚定移动`;
             holder!.appendChild(nd);
             ['in', 'out'].forEach(k => {
                 const hd = document.createElement('div');
