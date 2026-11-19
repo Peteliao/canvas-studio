@@ -11,6 +11,8 @@ import { finishTextEdit } from './richtext';
 import { renderPenDraft } from './interaction';
 import { refreshStudioPanels, onViewChanged } from './tools';
 import { shapeClipPath } from './shapes';
+import { scheduleAlignHighlight } from './alignguide';
+import { refreshRotateMarks } from './rotatemarks';
 
 export function buildNode(el: CanvasElement): HTMLDivElement {
     const d = document.createElement('div');
@@ -404,6 +406,8 @@ export function syncElement(id: string): void {
     const el = getEl(id), d = nodeMap.get(id);
     if (el && d) syncNode(el, d);
     else renderAll();
+    scheduleAlignHighlight();
+    refreshRotateMarks();
 }
 export function renderAll(): void {
     if (state.isTextEditing) finishTextEdit();   // 重建前先回写编辑内容，避免丢字
@@ -425,6 +429,7 @@ export function renderAll(): void {
     c.appendChild(box);
     applySelectionClasses();
     refreshStudioPanels();
+    scheduleAlignHighlight();
 }
 export function applySelectionClasses(): void {
     const set = new Set(state.selection);
@@ -435,6 +440,7 @@ export function applySelectionClasses(): void {
         d.classList.toggle('solo', id === solo);
         d.classList.toggle('transform-mode', state.transformMode && set.has(id));
     });
+    refreshRotateMarks();
     syncNodeSel();
     // 选中状态变化后刷新曲线节点/控制柄的显示
     if (solo && nodeMap.has(solo)) {

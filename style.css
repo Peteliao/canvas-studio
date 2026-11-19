@@ -231,8 +231,8 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 .paint-pop-width.disabled { opacity: .5; }
 .paint-pop-align { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 11px; color: var(--text-2); }
 .paint-pop-align > span { flex: 0 0 auto; }
-.paint-pop-align-seg .seg-btn { padding: 3px 0; }
-.paint-pop-align-seg .seg-btn .ic { width: 19px; height: 19px; }
+.paint-pop-align-seg .seg-btn { padding: 3px 0; gap: 2px; font-size: 9px; }
+.paint-pop-align-seg .seg-btn .ic { width: 21px; height: 21px; }
 .paint-pop-width-head { display: flex; align-items: center; gap: 5px; margin-bottom: 6px; font-size: 11px; color: var(--text-2); }
 .paint-pop-width-head > span:first-child { flex: 1; }
 .paint-pop-width-head .num-mini { width: 48px; }
@@ -417,15 +417,14 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 .canvas-element.transform-mode .resizer-s,
 .canvas-element.transform-mode .resizer-e,
 .canvas-element.transform-mode .resizer-w { border-color: var(--warn); background: var(--bg-surface); }
-.canvas-element.transform-mode .resizer-nw::after,
-.canvas-element.transform-mode .resizer-ne::after,
-.canvas-element.transform-mode .resizer-sw::after,
-.canvas-element.transform-mode .resizer-se::after { content: '↻'; position: absolute; width: 14px; height: 14px; display: grid; place-items: center; font-size: 12px; line-height: 1; font-weight: 700; color: var(--primary); background: var(--bg-surface); border: 1px solid var(--primary); border-radius: 50%; box-shadow: var(--shadow-sm); pointer-events: none; }
-.canvas-element.transform-mode .resizer-nw::after { top: -17px; left: -17px; }
-.canvas-element.transform-mode .resizer-ne::after { top: -17px; right: -17px; }
-.canvas-element.transform-mode .resizer-sw::after { bottom: -17px; left: -17px; }
-.canvas-element.transform-mode .resizer-se::after { bottom: -17px; right: -17px; }
 .canvas-element.active.solo.transform-mode .pivot-handle { display: grid; }
+
+/* 四角旋转标识：独立视口浮层，压在尺寸数值与工具条之上，四角任意一处都能拖动旋转 */
+.rotate-marks-layer { position: absolute; inset: 0; z-index: 20002; pointer-events: none; overflow: hidden; }
+.rotate-marks-layer[hidden] { display: none; }
+.rotate-mark { position: absolute; width: 20px; height: 20px; margin: -10px 0 0 -10px; display: grid; place-items: center; border: 1.5px solid var(--primary); border-radius: 50%; background: var(--bg-surface); color: var(--primary); font-size: 13px; font-weight: 700; line-height: 1; box-shadow: var(--shadow-md); cursor: grab; pointer-events: auto; user-select: none; transition: transform var(--transition), background var(--transition), color var(--transition); }
+.rotate-mark:hover { background: var(--primary-soft); transform: scale(1.16); }
+.rotate-mark.dragging { background: var(--primary); color: #fff; cursor: grabbing; transform: scale(1.1); }
 #selectionBox { position: absolute; border: 1px solid var(--primary); background: var(--primary-ring); pointer-events: none; z-index: 99999; display: none; border-radius: 2px; }
 
 /* 选中物件浮动工具条：隔离 / 样式刷 */
@@ -463,15 +462,27 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 .fit-float:hover { background: var(--primary-soft); }
 .fit-float .ic { width: 15px; height: 15px; }
 
-/* 描边对齐分段控件 */
+/* 描边对齐分段控件：三色身份 + 放大图标，一眼区分外 / 中 / 内 */
 .control-row.stroke-align-row { align-items: center; }
 .stroke-align-seg { display: flex; flex: 1; gap: 4px; min-width: 0; }
-.stroke-align-seg .seg-btn { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 5px 2px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-surface-2); color: var(--text-2); font-size: 10px; cursor: pointer; transition: border-color var(--transition), background var(--transition), color var(--transition); }
-.stroke-align-seg .seg-btn:hover { border-color: var(--border-strong); color: var(--text); }
-.stroke-align-seg .seg-btn.active { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
-.stroke-align-seg .seg-btn.previewing { border-color: var(--primary); border-style: dashed; background: var(--primary-soft); color: var(--primary); }
-.stroke-align-seg .seg-btn .ic { width: 16px; height: 16px; }
+.stroke-align-seg .seg-btn { flex: 1; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 2px; padding: 5px 1px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-surface-2); color: var(--text-2); font-size: 10px; white-space: nowrap; cursor: pointer; transition: border-color var(--transition), background var(--transition), color var(--transition), box-shadow var(--transition); }
+.stroke-align-seg .seg-btn span { white-space: nowrap; }
+.stroke-align-seg .seg-btn[data-arg="outside"] { --sa-accent: #f79009; --sa-tint: rgba(247, 144, 9, .14); }
+.stroke-align-seg .seg-btn[data-arg="center"] { --sa-accent: #4f6bff; --sa-tint: rgba(79, 107, 255, .14); }
+.stroke-align-seg .seg-btn[data-arg="inside"] { --sa-accent: #12b886; --sa-tint: rgba(18, 184, 134, .14); }
+.stroke-align-seg .seg-btn::before { content: ''; width: 4px; height: 4px; flex-shrink: 0; border-radius: 50%; background: var(--sa-accent); box-shadow: 0 0 0 1px rgba(0, 0, 0, .1); }
+.stroke-align-seg .seg-btn:hover { border-color: var(--sa-accent); color: var(--text); }
+.stroke-align-seg .seg-btn.active { border-color: var(--sa-accent); background: var(--sa-tint); color: var(--sa-accent); font-weight: 700; }
+.stroke-align-seg .seg-btn.previewing { border-color: var(--sa-accent); border-style: dashed; background: var(--sa-tint); color: var(--sa-accent); box-shadow: 0 0 0 2px var(--sa-tint); }
+.stroke-align-seg .seg-btn .ic { width: 18px; height: 18px; }
 .stroke-align-seg .seg-btn:disabled { opacity: .4; cursor: not-allowed; }
+.paint-pop-align-seg .seg-btn { padding: 3px 0; gap: 2px; font-size: 9px; }
+.paint-pop-align-seg .seg-btn::before { width: 4px; height: 4px; }
+.paint-pop-align-seg .seg-btn .ic { width: 20px; height: 20px; }
+.align-boundary-toggle { border: 1px solid var(--border); background: var(--bg-surface-2); }
+.align-boundary-toggle.active, .align-boundary-toggle[aria-pressed="true"] { background: var(--primary-soft); color: var(--primary); border-color: var(--primary-ring); }
+.align-hint { margin: -2px 0 8px; padding-left: 2px; }
+.align-hint-key { color: #4f6bff; font-weight: 700; }
 
 /* 旋转枢轴：琥珀色十字准星，与蓝色缩放手柄区分 */
 .pivot-handle { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; display: none; place-items: center; cursor: grab; z-index: 10002; border-radius: 50%; background: var(--bg-surface); border: 1.5px solid var(--warn); box-shadow: 0 0 0 3px rgba(247, 144, 9, .18), var(--shadow-sm); touch-action: none; }
@@ -491,7 +502,19 @@ kbd { font-family: inherit; font-size: 10px; padding: 1px 5px; border: 1px solid
 
 /* 曲线：路径 + 节点 + 控制柄 + 切线 */
 .curve-svg, .stroke-overlay { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-.align-boundary { position: absolute; left: -2px; top: -2px; width: calc(100% + 4px); height: calc(100% + 4px); overflow: visible; pointer-events: none; }
+/* 描边对齐高亮：蓝色流动虚线 = 物件边界，色带 = 描边实际落点（位于真实描边之下） */
+.align-boundary, .align-zone-layer { position: absolute; overflow: visible; pointer-events: none; }
+.align-boundary { z-index: 9996; }
+.align-zone-layer .ab-zone-line { stroke: var(--ab-color, #4f6bff); stroke-opacity: .52; }
+.align-boundary .ab-guide { filter: drop-shadow(0 0 var(--ab-glow, 1px) #fff) drop-shadow(0 0 var(--ab-glow, 1px) var(--ab-color, #4f6bff)); }
+.align-boundary .ab-guide > * { animation: ab-march .9s linear infinite; }
+@keyframes ab-march { to { stroke-dashoffset: var(--ab-cycle, -12); } }
+@media (prefers-reduced-motion: reduce) { .align-boundary .ab-guide > * { animation: none; } }
+.align-badge { position: absolute; left: calc(100% + .8em); top: 50%; transform: translateY(-50%); z-index: 10006; display: inline-flex; align-items: center; gap: .5em; padding: .32em .75em; border-radius: .55em; background: var(--bg-tooltip); color: #fff; font-size: 10px; line-height: 1.45; white-space: nowrap; pointer-events: none; box-shadow: var(--shadow-md); }
+.align-badge .ab-dot { width: .72em; height: .72em; flex-shrink: 0; border-radius: 50%; background: var(--ab-color, #4f6bff); box-shadow: 0 0 0 .2em rgba(255, 255, 255, .2); }
+.align-badge b { font-weight: 700; }
+.align-badge .ab-hint { color: rgba(255, 255, 255, .72); }
+.canvas-element.sa-highlight.active { outline-color: transparent; }
 .curve-svg path { pointer-events: visiblePainted; cursor: default; }
 .stroke-overlay * { pointer-events: stroke; cursor: default; }
 .curve-guides { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; display: none; z-index: 9998; }

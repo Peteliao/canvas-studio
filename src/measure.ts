@@ -10,6 +10,7 @@ import { commit, scheduleCommit } from './history';
 import { moveSelected, updateGeo } from './elements';
 import { applyGuideDistance, applyObjectGuideDistance, currentGuide, guideSegPath, nearestGuidesToBox, nearestObjectsToGuide } from './guides';
 import { setSelectionToolsMeasureRefresh, syncSelectionTools } from './selectiontools';
+import { refreshRotateMarks, rotateMarkSeedRects } from './rotatemarks';
 import type { AABB, CanvasElement, Guide, Point } from './types';
 
 type Side = 'left' | 'right' | 'top' | 'bottom';
@@ -281,6 +282,7 @@ function applyNeighborGap(g: GapMeasure, v: number): void {
 }
 
 export function drawMeasure(): void {
+    refreshRotateMarks();   // 四角旋转标识跟随几何 / 缩放变化，并供下方数值标签避让
     syncSelectionTools();
     const layer = $opt('measureLayer');
     if (!layer) return;
@@ -532,8 +534,8 @@ export function drawMeasure(): void {
         });
     }
 
-    // 统一排版：尺寸标签优先占位，其余标签依次避让
-    const seeds: SeedRect[] = [];
+    // 统一排版：尺寸标签优先占位，其余标签依次避让；变换模式下数值一律避开四角旋转标识
+    const seeds: SeedRect[] = rotateMarkSeedRects();
     if (state.settings.measureSize !== false && rotated && rot) {
         const rx = X(rot.x), ry = Y(rot.y);
         seeds.push({ l: rx - 9, r: rx + 9, t: ry - 9, b: ry + 9 });

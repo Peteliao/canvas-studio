@@ -5,6 +5,7 @@ import { state, nodeMap } from './state';
 import { $, $opt, clamp, deepCopy, elementIconEl, iconEl, toast } from './utils';
 import { getEl, selectedEls, curveFillOn, curveStrokeOn, makeStroke } from './model';
 import { selectionAABB } from './geometry';
+import { rotateMarkSeedRects } from './rotatemarks';
 import { renderAll, syncElement, syncNode } from './render';
 import { updateUI } from './panel';
 import { commit } from './history';
@@ -116,7 +117,7 @@ let stylePreview: { targetId: string; mode: StyleMode } | null = null;
 export function setSelectionToolsMeasureRefresh(fn: () => void): void {
     measureRefresh = fn;
 }
-function refreshMeasure(): void { measureRefresh?.(); }
+export function refreshMeasure(): void { measureRefresh?.(); }
 
 function sourceHasFill(el: CanvasElement): boolean {
     if (el.type === 'line') return false;
@@ -517,7 +518,7 @@ export function syncSelectionTools(): void {
         { x: screenRight + 9, y: midY },
         { x: state.pan.x + box.left * zoom - w - 9, y: midY }
     ];
-    const obstacles = measureTagRects();
+    const obstacles = measureTagRects().concat(rotateMarkSeedRects());
     let bestX = clamp(raw[0].x, 6, maxX);
     let bestY = clamp(raw[0].y, 6, Math.max(6, vh - h - 6));
     let bestScore = Infinity;

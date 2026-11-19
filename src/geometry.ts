@@ -31,12 +31,16 @@ export function elementWorldToLocal(el: CanvasElement, p: Point): Point {
     if (Math.abs(det) < 1e-6) return { x: px + rx, y: py + ry };
     return { x: px + (rx - kx * ry) / det, y: py + (ry - ky * rx) / det };
 }
-export function getAABB(el: CanvasElement): AABB {
+/** 元素四角（世界坐标，含旋转 / 倾斜 / 自定义枢轴），顺序为左上 / 右上 / 右下 / 左下 */
+export function elementCorners(el: CanvasElement): Point[] {
     const h = el.type === 'line' ? lineHeightFor(el) : el.h;
-    const corners = [
+    return [
         elementLocalToWorld(el, 0, 0), elementLocalToWorld(el, el.w, 0),
         elementLocalToWorld(el, el.w, h), elementLocalToWorld(el, 0, h)
     ];
+}
+export function getAABB(el: CanvasElement): AABB {
+    const corners = elementCorners(el);
     let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
     corners.forEach(p => {
         left = Math.min(left, p.x); top = Math.min(top, p.y);

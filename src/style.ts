@@ -1,7 +1,7 @@
 /* 样式计算：填充 CSS、描边/投影滤镜、波浪线几何 */
 import { HEX_RE, SVG_NS, STROKE_SVG_TYPES } from './constants';
 import { shapePoints } from './shapes';
-import type { CanvasElement, Fill, FillMode, GradientStop, LineSpec, StrokeGradient } from './types';
+import type { CanvasElement, Fill, FillMode, GradientStop, LineSpec, StrokeAlign, StrokeGradient } from './types';
 import { clamp, finite, round2 } from './utils';
 
 /** 两色按比例混合（t=0 取 a，t=1 取 b），用于透明特效的高光/暗部派生 */
@@ -144,24 +144,46 @@ export function strokeOverlayMarkup(el: CanvasElement, w: number, h: number): st
     const clip = align === 'inside' ? ` clip-path="url(#stc_${el.id})"` : ` mask="url(#stm_${el.id})"`;
     return `<defs>${defs}</defs><g${clip}>${shape('none', ' ' + strokeAttrs + ' stroke-linejoin="round"')}</g>`;
 }
-/** 悬停试穿时的几何边界：白底 + 蓝色虚线，判断描边落在轮廓内 / 中 / 外。
- *  线宽与虚线按画布缩放折算回屏幕空间：保持纤细且最多为实际描边宽度的 60%（1.6px 封顶），
- *  放大画布后细描边不会被虚线盖住，缩小画布时虚线也不会糊成实线 */
+/** 试穿高亮的几何边界：深底 + 白底 + 蓝虚线三层「行进蚂蚁」虚线。
+ *  线宽与节距按缩放折算回屏幕空间（恒定约 2px 蓝线 / 4.4px 外框），
+ *  在深色描边、浅色填充与深色主题上都能一眼看清描边落在轮廓内 / 中 / 外 */
 export function boundaryMarkup(el: CanvasElement, w: number, h: number, zoom = 1): string {
     const z = clamp(finite(zoom, 1), 0.05, 16);
-    const sw = el.stroke ? Math.max(0, finite(el.stroke.width, 0)) : 0;
-    const swScreen = sw * z;
-    const guide = swScreen > 0 ? clamp(Math.min(swScreen * 0.6, 1.6), 0.75, 1.6) : 1.25;
-    const dash = ` stroke-dasharray="${round2(5 / z)} ${round2(4 / z)}"`;
+    const u = 1 / z;
+    const dash = ` stroke-dasharray="${round2(7 * u)} ${round2(5 * u)}"`;
     const pts = shapePoints(el);
-    const draw = (stroke: string, width: number, extra = ''): string => {
-        const attrs = ` fill="none" stroke="${stroke}" stroke-width="${round2(width)}"${extra}`;
+    const draw = (stroke: string, width: number): string => {
+        const attrs = ` fill="none" stroke="${stroke}" stroke-width="${round2(width)}"${dash}`;
         if (pts) return `<polygon points="${pts.map(([x, y]) => `${round2(x * w / 100)},${round2(y * h / 100)}`).join(' ')}"${attrs}/>`;
         if (el.type === 'circle') return `<ellipse cx="${round2(w / 2)}" cy="${round2(h / 2)}" rx="${round2(w / 2)}" ry="${round2(h / 2)}"${attrs}/>`;
         const rx = Math.min(el.borderRadius, w / 2, h / 2);
         return `<rect x="0" y="0" width="${w}" height="${h}" rx="${round2(rx)}"${attrs}/>`;
     };
-    return draw('#ffffff', (guide + 0.8) / z) + draw('#4f6bff', guide / z, dash);
+    return draw('#10203f', 4.4 * u) + draw('#ffffff', 3.1 * u) + draw('#2f6bff', 2.1 * u);
+}
+/** 描边对齐高亮：按与真实描边相同的裁切规则画出「描边落点」色带，
+ *  三种模式呈现为边界外 / 骑跨边界 / 边界内的可见色块；细描边或零描边也保证屏幕最小可见宽度 */
+export function alignZoneMarkup(el: CanvasElement, align: StrokeAlign, w: number, h: number, zoom = 1): string {
+    const z = clamp(finite(zoom, 1), 0.05, 16);
+    const sw = el.stroke ? Math.max(0, finite(el.stroke.width, 0)) : 0;
+    const band = Math.max(sw * z, 7) / z;
+    const pts = shapePoints(el);
+    const geom = (attrs: string): string => {
+        if (pts) return `<polygon points="${pts.map(([x, y]) => `${round2(x * w / 100)},${round2(y * h / 100)}`).join(' ')}" ${attrs}/>`;
+        if (el.type === 'circle') return `<ellipse cx="${round2(w / 2)}" cy="${round2(h / 2)}" rx="${round2(w / 2)}" ry="${round2(h / 2)}" ${attrs}/>`;
+        const rx = Math.min(el.borderRadius, w / 2, h / 2);
+        return `<rect x="0" y="0" width="${w}" height="${h}" rx="${round2(rx)}" ${attrs}/>`;
+    };
+    const line = geom(`class="ab-zone-line" fill="none" stroke-width="${round2(align === 'center' ? band : band * 2)}" stroke-linejoin="round"`);
+    if (align === 'center') return `<g class="ab-zone">${line}</g>`;
+    const pad = band * 2 + 8 / z;
+    const defs = align === 'inside'
+        ? `<clipPath id="abz_${el.id}" clipPathUnits="userSpaceOnUse">${geom('fill="#000"')}</clipPath>`
+        : `<mask id="abz_${el.id}" maskUnits="userSpaceOnUse" x="${round2(-pad)}" y="${round2(-pad)}" width="${round2(w + pad * 2)}" height="${round2(h + pad * 2)}">`
+            + `<rect x="${round2(-pad)}" y="${round2(-pad)}" width="${round2(w + pad * 2)}" height="${round2(h + pad * 2)}" fill="#fff"/>`
+            + geom('fill="#000"') + `</mask>`;
+    const clip = align === 'inside' ? ` clip-path="url(#abz_${el.id})"` : ` mask="url(#abz_${el.id})"`;
+    return `<defs>${defs}</defs><g class="ab-zone"${clip}>${line}</g>`;
 }
 export function wavyGeom(line: LineSpec): { amp: number; period: number } {
     const amp = line.width * 0.5 + line.wavyAmp * 1.5;

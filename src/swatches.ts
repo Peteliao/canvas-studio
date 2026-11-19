@@ -13,6 +13,7 @@ import { saveSettings } from './db';
 import { bucketSlotLabel, setBucketColor, syncBucketSwatch } from './bucket';
 import { updateCanvasBg } from './styles';
 import { syncPaintStrokeWidth, syncStrokeAlignControls, endStrokeAlignPreview } from './railstroke';
+import { flashAlignHighlight } from './alignguide';
 import { startTextEdit } from './richtext';
 import type { BlendMode, GradientStop, ShadowType, StrokeAlign, StrokeGradient } from './types';
 
@@ -113,6 +114,7 @@ export function setStrokeAlign(align: string): void {
     });
     scheduleCommit();
     syncStyleControls();
+    flashAlignHighlight(a);
 }
 /** 描边渐变色标变更（来自 shared editor） */
 export function applyStrokeGradientStops(stops: GradientStop[]): void {

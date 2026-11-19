@@ -32,6 +32,7 @@ import { updateElementColor, updateCanvasBg, toggleElBgMode, updateElementBackgr
 import { updateCurveFill, updateCurveStroke, updateUI } from './panel';
 import { openBucketPicker, hideBucketHover, bucketEditsSelection, commitBucketPicker, previewBucketPicker, bindPaintPopoverControls, setBucketColor, bucketSlotLabel } from './bucket';
 import { bindStrokeAlignPreview } from './railstroke';
+import { toggleBoundaryGuide } from './alignguide';
 import { addImage, handleImageUpload } from './image';
 import { saveSettings } from './db';
 import { syncTransform } from './render';
@@ -78,6 +79,7 @@ export const ACTIONS: Record<string, ActionFn> = {
     textAlign: arg => updateTextAlign(arg as TextAlign),
     shadowPreset: arg => applyShadowPreset(arg || ''),
     strokeAlign: arg => setStrokeAlign(arg || 'center'),
+    toggleBoundaryGuide: () => toggleBoundaryGuide(),
     layer: arg => layerAction(arg!),
     relLayer: arg => startRelLayer(arg as 'under' | 'above'),
     exportConfig: () => { void exportConfig(); },

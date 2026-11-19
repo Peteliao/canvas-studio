@@ -11,7 +11,7 @@ import { finishTextEdit } from './richtext';
 import { endRelLayer } from './layers';
 import { expandGroupIds } from './layerlist';
 import { syncBucketFromSelection } from './bucket';
-import { syncSelectionTools } from './selectiontools';
+import { syncSelectionTools, refreshMeasure } from './selectiontools';
 
 function groupUnitIds(id: string): string[] {
     const el = getEl(id);
@@ -75,8 +75,9 @@ export function setTransformMode(on: boolean): void {
     if (state.transformMode === next) return;
     state.transformMode = next;
     applySelectionClasses();
+    refreshMeasure();   // 重排数值标签避开四角旋转标识，并刷新标识本身
     syncSelectionTools();
-    if (next) toast('变换模式：拖角点旋转，拖上下边中点左右倾斜，拖左右边中点上下倾斜；点击空白退出', 'success');
+    if (next) toast('变换模式：拖四角 ↻ 标识或角点均可旋转，拖上下边中点左右倾斜，拖左右边中点上下倾斜；点击空白退出', 'success');
 }
 export function updateGeoLockButton(): void {
     const btn = $('btnGeoLock');

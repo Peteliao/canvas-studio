@@ -7,7 +7,7 @@ import { validateProject, snapshotJSON, makeFill, makeLine, makeStroke, makeShad
     curvePathD, curveFillOn, curveStrokeOn, validateGuide, curveSegPts, splitCubic, cubicAt, sortedElements,
     curveNodesBox, curveLocalBox, selectedEls } from './model';
 import { elementSnapPoints, nearestSnapPoint, nearestPointSnap } from './snappoints';
-import { applyEffectTint, fillToCSS, shapeFilter, lineHeightFor, wavyDashSpec, wavyDataURI, strokeOverlayMarkup, boundaryMarkup } from './style';
+import { applyEffectTint, fillToCSS, shapeFilter, lineHeightFor, wavyDashSpec, wavyDataURI, strokeOverlayMarkup, boundaryMarkup, alignZoneMarkup } from './style';
 import { buildSVG, buildPDF } from './vector-export';
 import { SHAPE_PARAM_SPECS, shapePoints, shapeClipPath, sanitizeShapeParams } from './shapes';
 import { getAABB, setPivot, elementLocalToWorld, elementWorldToLocal } from './geometry';
@@ -17,13 +17,15 @@ import { bucketColor, elementSlotColor, applyBucketColor } from './bucket';
 import { neighborGapsFor, alignmentMeasures, drawMeasure } from './measure';
 import type { GapMeasure, AlignMeasure } from './measure';
 import { boxGuideMeasure } from './guides';
-import { setSelection, toggleSelection } from './selection';
+import { setSelection, toggleSelection, setTransformMode } from './selection';
+import { refreshRotateMarks, rotateMarkSeedRects } from './rotatemarks';
 import { linkCompatibility, linkSelected, unlinkSelected, syncLinkedOnCommit, resetLinkSnapshots } from './linked';
 import { dbAvailable } from './db';
 import { EFFECT_PRESETS } from './effects';
 import { applyStyleToElement, styleOptionEnabled, canConvertShape, convertElementShape } from './selectiontools';
 import { showFitFloat, hideFitFloat } from './view';
 import { beginStrokeAlignPreview, endStrokeAlignPreview } from './railstroke';
+import { showAlignPreview, resetAlignHighlight } from './alignguide';
 
 export function runSelfTest(): void {
     const results: { name: string; ok: boolean; detail: string }[] = [];
@@ -300,6 +302,30 @@ export function runSelfTest(): void {
         assert(v.skewX === 85 && v.skewY === -85, '倾斜角未限幅');
         return '坐标往返 · AABB 扩张 · 枢轴保形 · ±85° 限幅';
     });
+    check('四角旋转标识与数值避让', () => {
+        const layer = document.getElementById('rotateMarksLayer');
+        assert(!!layer, '缺少四角旋转标识浮层');
+        const prevSel = state.selection.slice(), prevMode = state.transformMode, prevTool = state.tool;
+        try {
+            state.tool = 'select';
+            const target = state.model.elements.find(e => !e.locked && e.visible !== false);
+            if (target) setSelection([target.id]);
+            setTransformMode(true);
+            const ms = Array.from(document.querySelectorAll<HTMLElement>('#rotateMarksLayer .rotate-mark'));
+            assert(ms.length === 4 && !layer!.hidden, '变换模式未显示四个旋转标识');
+            assert(ms.every(m => !!m.dataset.dir && !!m.style.left && !!m.style.top), '旋转标识未定位');
+            assert(new Set(ms.map(m => m.dataset.dir)).size === 4, '四角标识方向重复');
+            assert(rotateMarkSeedRects().length === 4, '数值标注避让占位缺失');
+            setTransformMode(false);
+            assert(layer!.hidden, '退出变换模式后旋转标识未隐藏');
+        } finally {
+            state.tool = prevTool;
+            state.transformMode = prevMode;
+            setSelection(prevSel);
+            refreshRotateMarks();
+        }
+        return '四角可拖拽 · 浮于数值之上 · 数值自动避让';
+    });
     check('虚线描边渲染', () => {
         const el = buildElement('rect', 0, 0);
         el.stroke = makeStroke({ width: 3, style: 'dashed', color: '#000000' });
@@ -457,6 +483,7 @@ export function runSelfTest(): void {
         const el = selectedEls().find(e => e.type !== 'line' && e.type !== 'curve' && !e.locked)
             || state.model.elements.find(e => e.type !== 'line' && e.type !== 'curve' && !e.locked);
         if (!el) return '当前无矩形/文本可测，跳过';
+        endStrokeAlignPreview();   // 先结算可能残留的悬停试穿，避免快照取到临时描边
         const original = el.stroke;
         try {
             if (!state.selection.includes(el.id)) setSelection([el.id]);
@@ -473,22 +500,48 @@ export function runSelfTest(): void {
         }
         return '悬停即时预览 · 移出按引用还原';
     });
-    check('描边边界虚线缩放适配', () => {
+    check('描边高亮虚线缩放适配', () => {
         const el = buildElement('rect', 0, 0);
         el.w = 200; el.h = 120;
         el.stroke = makeStroke({ width: 1, color: '#111111' });
         const guideScreen = (zoom: number): number => {
-            const m = boundaryMarkup(el, el.w, el.h, zoom).match(/stroke="#4f6bff" stroke-width="([\d.]+)"/);
+            const m = boundaryMarkup(el, el.w, el.h, zoom).match(/stroke="#2f6bff" stroke-width="([\d.]+)"/);
             return m ? Number(m[1]) * zoom : 0;
         };
         const g1 = guideScreen(1), g8 = guideScreen(8);
-        assert(g1 > 0 && g8 > 0, '边界虚线缺失');
-        assert(g1 < 1 && g8 < 8, '放大后虚线比 1px 描边还粗');
-        assert(g8 <= 1.6 + 0.01, '放大后虚线未收敛到 1.6px 屏幕宽度');
-        assert(boundaryMarkup(el, el.w, el.h, 8).includes('stroke-dasharray="0.63 0.5"'), '虚线节距未随缩放换算');
+        assert(g1 > 1.9 && g1 < 2.3, '高亮虚线缺失或未达到醒目线宽');
+        assert(Math.abs(g1 - g8) < .06, '放大后高亮虚线未保持屏幕恒定宽度');
+        assert(boundaryMarkup(el, el.w, el.h, 8).includes('stroke-dasharray="0.88 0.63"'), '虚线节距未随缩放换算');
         el.stroke = makeStroke({ width: 12, color: '#111111' });
-        assert(guideScreen(1) <= 1.6 + 0.01, '粗描边时虚线仍过粗');
-        return '屏幕恒定细线 · 不超描边宽度 · 节距随缩放折算';
+        assert(Math.abs(guideScreen(1) - g1) < .02, '粗描边时高亮虚线宽度不应改变');
+        return '屏幕恒定 2px · 三层高对比虚线 · 节距随缩放折算';
+    });
+    check('描边对齐高亮虚线与落点色带', () => {
+        const el = buildElement('rect', 0, 0);
+        el.w = 200; el.h = 120;
+        el.stroke = makeStroke({ width: 2 });
+        const outside = alignZoneMarkup(el, 'outside', el.w, el.h);
+        const center = alignZoneMarkup(el, 'center', el.w, el.h);
+        const inside = alignZoneMarkup(el, 'inside', el.w, el.h);
+        assert(outside.includes('<mask id="abz_') && !outside.includes('clip-path'), '居外色带未裁到边界外');
+        assert(inside.includes('<clipPath id="abz_') && !inside.includes('<mask'), '居内色带未裁到边界内');
+        assert(center.includes('ab-zone-line') && !center.includes('clip-path') && !center.includes('<mask'), '居中色带应骑跨边界');
+        const prevSel = state.selection.slice();
+        const target = state.model.elements.find(e => !e.locked && e.type !== 'line' && e.type !== 'curve');
+        try {
+            if (target) {
+                setSelection([target.id]);
+                showAlignPreview('outside');
+                const svg = document.querySelector<SVGSVGElement>('.align-boundary[data-align="outside"]');
+                const zone = document.querySelector<SVGSVGElement>('.align-zone-layer[data-align="outside"]');
+                assert(!!svg && !!svg.querySelector('.ab-guide') && !!zone && !!zone.querySelector('.ab-zone-line'), '画布高亮虚线 / 色带缺失');
+                assert(!!document.querySelector('.align-badge'), '对齐模式标签缺失');
+            }
+        } finally {
+            resetAlignHighlight();
+            setSelection(prevSel);
+        }
+        return '三色模式 · 流动虚线 · 落点色带 · 模式标签';
     });
     check('形状转换', () => {
         const el = buildElement('rect', 10, 20);

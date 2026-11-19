@@ -12,6 +12,7 @@ import { renderLayerList } from './layerlist';
 import { renderProjectPanels } from './projects';
 import { syncRailGroupForTool } from './rail';
 import { syncSelectionTools } from './selectiontools';
+import { scheduleAlignHighlight } from './alignguide';
 import type { TabName, ToolName } from './types';
 
 export function setTool(name: ToolName): void {
@@ -136,4 +137,5 @@ export function onViewChanged(): void {
     drawGuides();
     drawMeasure();
     const zoom = $opt('statusZoom'); if (zoom) zoom.textContent = Math.round(state.zoom * 100) + '%';
+    scheduleAlignHighlight();
 }

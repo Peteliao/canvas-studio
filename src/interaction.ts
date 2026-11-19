@@ -448,6 +448,18 @@ function onPointerDown(e: PointerEvent): void {
     }
     if (e.button !== 0) return;
     clearAnchorHover();
+    // 变换模式四角 ↻ 标识位于 HUD 顶层、不属于任何 .canvas-element，需优先接管旋转
+    const rotateMark = target.closest<HTMLElement>('.rotate-mark');
+    if (rotateMark) {
+        const el = getEl(rotateMark.dataset.id || '') || selectedEls()[0];
+        if (el && !el.locked && state.transformMode && state.tool === 'select') {
+            rotateMark.classList.add('dragging');
+            startRotateInteraction(e, el);
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+    }
     // 颜料桶下尺寸标注浮层不拦截点击，交由 bucketHitElement 穿透到下方元素
     const bucketMeasure = state.tool === 'bucket' && target.closest && target.closest('.measure-tag');
     if (!bucketMeasure && isChromeUI(target)) return;   // 点击面板不退出编辑态
@@ -1030,7 +1042,7 @@ export function endInteraction(e?: PointerEvent): void {
         commit();
     }
     hideSizeTooltip();
-    document.querySelectorAll('.pivot-handle.dragging, .curve-node.dragging, .curve-ctrl.dragging').forEach(n => n.classList.remove('dragging'));
+    document.querySelectorAll('.pivot-handle.dragging, .curve-node.dragging, .curve-ctrl.dragging, .rotate-mark.dragging').forEach(n => n.classList.remove('dragging'));
     const endedKind = state.interaction ? state.interaction.kind : null;
     document.querySelectorAll<HTMLElement>('.canvas-element.pivot-peek').forEach(n => {
         // 交互结束但指针仍停在元素上时延迟收起，便于继续调整枢轴

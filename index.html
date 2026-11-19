@@ -101,10 +101,25 @@
   <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
   <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
   <symbol id="i-convert" viewBox="0 0 24 24"><path d="M3.5 4.5h8v8h-8z" opacity=".35"/><path d="M10.5 11.5h10l-3 8h-10z"/></symbol>
-  <!-- 描边对齐：虚线=物件边界（居外在内侧 / 居中穿过中间 / 居内在外侧），实心条=描边断面 -->
-  <symbol id="i-sa-outside" viewBox="0 0 24 24"><rect x="8.5" y="4" width="12" height="16" rx="1.6" fill="currentColor" fill-opacity=".14" stroke="none"/><path d="M8.5 2.4v19.2" stroke-width="1.7" stroke-dasharray="2.6 2" stroke-opacity=".8"/><rect x="2.5" y="4" width="4.9" height="16" rx="1.2" fill="currentColor" stroke="none"/></symbol>
-  <symbol id="i-sa-center" viewBox="0 0 24 24"><rect x="8.5" y="4" width="12" height="16" rx="1.6" fill="currentColor" fill-opacity=".14" stroke="none"/><path d="M8.5 2.4v19.2" stroke-width="1.7" stroke-dasharray="2.6 2" stroke-opacity=".8"/><rect x="5.55" y="4" width="2" height="16" rx="1" fill="currentColor" stroke="none"/><rect x="9.45" y="4" width="2" height="16" rx="1" fill="currentColor" stroke="none"/></symbol>
-  <symbol id="i-sa-inside" viewBox="0 0 24 24"><rect x="8.5" y="4" width="12" height="16" rx="1.6" fill="currentColor" fill-opacity=".14" stroke="none"/><path d="M8.5 2.4v19.2" stroke-width="1.7" stroke-dasharray="2.6 2" stroke-opacity=".8"/><rect x="9.6" y="4" width="4.9" height="16" rx="1.2" fill="currentColor" stroke="none"/></symbol>
+  <!-- 描边对齐：放大后的物件左上角。浅色方块=物件，蓝色虚线 L=物件边界，粗色 L=描边断面（居外在边界之外 / 居中压在边界上 / 居内在边界之内） -->
+  <symbol id="i-sa-outside" viewBox="0 0 24 24">
+    <rect x="8" y="8" width="13" height="13" rx="1.4" fill="currentColor" fill-opacity=".16" stroke="none"/>
+    <path d="M4 21V4h17" fill="none" stroke="currentColor" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M8 21V8h13" fill="none" stroke="#ffffff" stroke-opacity=".9" stroke-width="2.9" stroke-dasharray="2.8 2.2"/>
+    <path d="M8 21V8h13" fill="none" stroke="#4f6bff" stroke-width="1.35" stroke-dasharray="2.8 2.2"/>
+  </symbol>
+  <symbol id="i-sa-center" viewBox="0 0 24 24">
+    <rect x="8" y="8" width="13" height="13" rx="1.4" fill="currentColor" fill-opacity=".16" stroke="none"/>
+    <path d="M8 21V8h13" fill="none" stroke="currentColor" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M8 21V8h13" fill="none" stroke="#ffffff" stroke-opacity=".9" stroke-width="2.9" stroke-dasharray="2.8 2.2"/>
+    <path d="M8 21V8h13" fill="none" stroke="#4f6bff" stroke-width="1.35" stroke-dasharray="2.8 2.2"/>
+  </symbol>
+  <symbol id="i-sa-inside" viewBox="0 0 24 24">
+    <rect x="8" y="8" width="13" height="13" rx="1.4" fill="currentColor" fill-opacity=".16" stroke="none"/>
+    <path d="M12 21V12h9" fill="none" stroke="currentColor" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M8 21V8h13" fill="none" stroke="#ffffff" stroke-opacity=".9" stroke-width="2.9" stroke-dasharray="2.8 2.2"/>
+    <path d="M8 21V8h13" fill="none" stroke="#4f6bff" stroke-width="1.35" stroke-dasharray="2.8 2.2"/>
+  </symbol>
   <symbol id="i-paragraph" viewBox="0 0 24 24"><path d="M13 4H8a4 4 0 0 0 0 8h5M13 4v16M16 4v16M8 16h8" stroke-width="1.6"/></symbol>
   <symbol id="i-indent" viewBox="0 0 24 24"><path d="M4 4h16M10 9h10M10 15h10M4 20h16M4 9l4 3-4 3"/></symbol>
   <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3 12V4h8l9 9-8 8z"/><circle cx="7.5" cy="7.5" r="1.2"/></symbol>
@@ -342,6 +357,7 @@
         <div class="anchors-layer" id="anchorsLayer"></div>
         <div class="pen-layer" id="penLayer"></div>
         <div class="measure-layer" id="measureLayer"></div>
+        <div class="rotate-marks-layer" id="rotateMarksLayer" hidden></div>
         <div class="selection-tools" id="selectionTools" role="toolbar" aria-label="选中物件快捷操作" hidden>
           <button type="button" id="btnQuickConvert" title="转换形状：改为平行四边形、梯形、星形等"></button>
           <button type="button" id="btnQuickIsolate" title="隐藏其它物件（隔离）"></button>
@@ -384,9 +400,9 @@
         <div class="paint-pop-align">
           <span>描边对齐</span>
           <div class="stroke-align-seg paint-pop-align-seg" role="radiogroup" aria-label="描边对齐">
-            <button type="button" class="seg-btn" id="paintPopAlignOutside" data-act="strokeAlign" data-arg="outside" title="描边居外（悬停即时预览）" aria-label="描边居外"><svg class="ic"><use href="#i-sa-outside"/></svg></button>
-            <button type="button" class="seg-btn" id="paintPopAlignCenter" data-act="strokeAlign" data-arg="center" title="描边居中（默认，悬停即时预览）" aria-label="描边居中"><svg class="ic"><use href="#i-sa-center"/></svg></button>
-            <button type="button" class="seg-btn" id="paintPopAlignInside" data-act="strokeAlign" data-arg="inside" title="描边居内（悬停即时预览）" aria-label="描边居内"><svg class="ic"><use href="#i-sa-inside"/></svg></button>
+            <button type="button" class="seg-btn" id="paintPopAlignOutside" data-act="strokeAlign" data-arg="outside" title="居外：描边完整落在蓝色虚线（物件边界）之外；悬停即时在画布高亮试穿" aria-label="描边居外"><svg class="ic"><use href="#i-sa-outside"/></svg><span>外</span></button>
+            <button type="button" class="seg-btn" id="paintPopAlignCenter" data-act="strokeAlign" data-arg="center" title="居中：描边压在蓝色虚线（物件边界）上，内外各一半；悬停即时试穿" aria-label="描边居中"><svg class="ic"><use href="#i-sa-center"/></svg><span>中</span></button>
+            <button type="button" class="seg-btn" id="paintPopAlignInside" data-act="strokeAlign" data-arg="inside" title="居内：描边完整落在蓝色虚线（物件边界）之内；悬停即时在画布高亮试穿" aria-label="描边居内"><svg class="ic"><use href="#i-sa-inside"/></svg><span>内</span></button>
           </div>
         </div>
         <div class="paint-pop-width-head">
@@ -589,11 +605,13 @@
                 <div class="control-row stroke-align-row">
                   <span class="control-label">对齐</span>
                   <div class="stroke-align-seg" role="radiogroup" aria-label="描边对齐">
-                    <button type="button" class="seg-btn" id="btnStrokeOutside" data-act="strokeAlign" data-arg="outside" title="描边居外"><svg class="ic"><use href="#i-sa-outside"/></svg><span>居外</span></button>
-                    <button type="button" class="seg-btn" id="btnStrokeCenter" data-act="strokeAlign" data-arg="center" title="描边居中（默认）"><svg class="ic"><use href="#i-sa-center"/></svg><span>居中</span></button>
-                    <button type="button" class="seg-btn" id="btnStrokeInside" data-act="strokeAlign" data-arg="inside" title="描边居内"><svg class="ic"><use href="#i-sa-inside"/></svg><span>居内</span></button>
+                    <button type="button" class="seg-btn" id="btnStrokeOutside" data-act="strokeAlign" data-arg="outside" title="居外：描边完整落在蓝色虚线（物件边界）之外；悬停即时在画布高亮试穿" aria-label="描边居外"><svg class="ic"><use href="#i-sa-outside"/></svg><span>居外</span></button>
+                    <button type="button" class="seg-btn" id="btnStrokeCenter" data-act="strokeAlign" data-arg="center" title="居中：描边压在蓝色虚线（物件边界）上，内外各一半（默认）；悬停即时试穿" aria-label="描边居中"><svg class="ic"><use href="#i-sa-center"/></svg><span>居中</span></button>
+                    <button type="button" class="seg-btn" id="btnStrokeInside" data-act="strokeAlign" data-arg="inside" title="居内：描边完整落在蓝色虚线（物件边界）之内；悬停即时在画布高亮试穿" aria-label="描边居内"><svg class="ic"><use href="#i-sa-inside"/></svg><span>居内</span></button>
                   </div>
+                  <button type="button" class="icon-btn tiny align-boundary-toggle" id="btnBoundaryGuide" data-act="toggleBoundaryGuide" title="边界虚线常显：开启后选中物件始终高亮蓝色虚线边界与描边落点色带" aria-label="边界虚线常显" aria-pressed="false"><svg class="ic"><use href="#i-eye"/></svg></button>
                 </div>
+                <p class="hint-text align-hint"><span class="align-hint-key">蓝色虚线 = 物件边界</span>；悬停三个按钮可在画布高亮试穿，点击应用后仍会短暂显示</p>
                 <div class="control-row">
                   <span class="control-label">描边类型</span>
                   <select id="strokePaintMode" aria-label="描边类型">
