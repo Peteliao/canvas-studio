@@ -16,7 +16,8 @@ import { exportConfig, importConfig, resetToDefault } from './project';
 import { showExportModal, doExport, exportBoundsFor, renderModelToCanvas, canvasToBlob } from './exporter';
 import { buildSVG } from './vector-export';
 import { closeModal, cropConfirm, replaceImage, handleCropFile } from './cropper';
-import { toggleTheme, toggleSetting } from './theme';
+import { toggleTheme, toggleSetting, toggleMeasureType } from './theme';
+import type { MeasureKind } from './theme';
 import { drawGuides } from './guides';
 import { drawMeasure } from './measure';
 import { setTool, toggleInspector, toggleCard, switchTab, setInspectorFolded, bindMenus } from './tools';
@@ -29,6 +30,7 @@ import { setLineStyle, setWavyDash, curveOp, clientToWorld } from './interaction
 import { updateElementColor, updateCanvasBg, toggleElBgMode, updateElementBackground, updateElementOpacity, updateElementRadius, updateLineStyle, toggleBgMode } from './styles';
 import { updateCurveFill, updateCurveStroke } from './panel';
 import { openBucketPicker, setBucketColor, hideBucketHover, bucketSlotLabel, bucketEditsSelection, commitBucketPicker, previewBucketPicker, applySlotToSelection } from './bucket';
+import { applyRailStrokeWidth } from './railstroke';
 import { addImage, handleImageUpload } from './image';
 import { saveSettings } from './db';
 import { syncTransform } from './render';
@@ -75,6 +77,7 @@ export const ACTIONS: Record<string, ActionFn> = {
     toggleGuideLines: () => { toggleSetting('guideLines', '辅助线'); drawGuides(); drawMeasure(); },
     toggleSnap: () => toggleSetting('snap', '智能吸附'),
     toggleGuides: () => toggleSetting('guides', '尺寸标注'),
+    toggleMeasure: arg => toggleMeasureType((arg || 'size') as MeasureKind),
     toggleInspector: () => toggleInspector(),
     setTool: arg => setTool(arg as ToolName),
     groupSelected: () => groupSelected(),
@@ -188,6 +191,7 @@ export function bindDelegates(): void {
         letterSpacingInput: () => updateTextStyle('spacing'),
         // V12 新增控件
         strokeColor: () => applyStyleChange(),
+        railStrokeWidth: () => applyRailStrokeWidth(),
         strokeWidth: () => applyStyleChange(),
         strokeStyle: () => applyStyleChange(),
         blendMode: () => applyStyleChange(),

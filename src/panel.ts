@@ -9,6 +9,7 @@ import { scheduleCommit } from './history';
 import { syncPivotInputs, syncLineStyleSeg, syncWavyDashSeg, updateCurveNodePanel } from './interaction';
 import { refreshStudioUI } from './tools';
 import { syncStyleControls } from './swatches';
+import { syncRailStrokeWidth } from './railstroke';
 
 export function showOnly(mode: FillMode): void {
     $('bgSolidControls').style.display = mode === 'solid' ? 'flex' : 'none';
@@ -188,6 +189,7 @@ export function updateUI(): void {
     $('groupTools').style.display = n > 0 ? 'flex' : 'none';
     $('selCountBadge').textContent = String(n);
     refreshStudioUI();
+    syncRailStrokeWidth();
     if (!n) return;
     const allLocked = selectedEls().every(e => e.locked);
     setIcon($('btnLockToggle'), allLocked ? 'lock' : 'unlock');

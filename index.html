@@ -295,6 +295,10 @@
           <button class="rail-color-slot" id="bucketStrokeSlot" title="描边色：点此选色" aria-label="描边色">
             <span class="rail-color-chip" id="bucketStrokeChip" aria-hidden="true"></span><span>描边</span>
           </button>
+          <div class="rail-stroke-row disabled" id="railStrokeRow" title="选中物件后可调整描边粗细">
+            <div class="rail-stroke-head"><span>粗细</span><span id="railStrokeWidthVal">—</span></div>
+            <input type="range" id="railStrokeWidth" min="0" max="30" step="1" value="0" aria-label="描边粗细" title="选中物件后可调整描边粗细" disabled>
+          </div>
           <button class="rail-color-none" id="bucketNoneBtn" title="无填充：将当前色槽设为“无”" aria-label="无填充或无描边">无</button>
           <input type="color" class="bucket-color-hidden" id="bucketColorInput" value="#4f6bff" tabindex="-1" aria-hidden="true">
         </div>
@@ -792,6 +796,13 @@
     <span class="status-item"><svg class="ic"><use href="#i-move"/></svg><span id="statusCoord">X 0 · Y 0</span></span>
     <span class="status-item"><span id="statusZoom">100%</span></span>
     <span class="statusbar-spacer"></span>
+    <span class="measure-toggles" role="group" aria-label="标注显示开关">
+      <button type="button" class="status-flag measure-flag on" id="statusMeasureSize" data-act="toggleMeasure" data-arg="size" aria-pressed="true" title="自身尺寸与角度（W / H / ∠）：点击开关，快捷键 1"><span class="measure-dot size" aria-hidden="true"></span>尺寸<span class="measure-hot">1</span></button>
+      <button type="button" class="status-flag measure-flag on" id="statusMeasureCanvas" data-act="toggleMeasure" data-arg="canvas" aria-pressed="true" title="物件到画布四边的边距：点击开关，快捷键 2"><span class="measure-dot canvas" aria-hidden="true"></span>边距<span class="measure-hot">2</span></button>
+      <button type="button" class="status-flag measure-flag on" id="statusMeasureGap" data-act="toggleMeasure" data-arg="gap" aria-pressed="true" title="与最近邻物件的间距：点击开关，快捷键 3"><span class="measure-dot gap" aria-hidden="true"></span>间距<span class="measure-hot">3</span></button>
+      <button type="button" class="status-flag measure-flag on" id="statusMeasureAlign" data-act="toggleMeasure" data-arg="align" aria-pressed="true" title="与邻近物件的边缘对齐差：点击开关，快捷键 4"><span class="measure-dot align" aria-hidden="true"></span>对齐<span class="measure-hot">4</span></button>
+      <button type="button" class="status-flag measure-flag on" id="statusMeasureGuide" data-act="toggleMeasure" data-arg="guide" aria-pressed="true" title="物件与辅助线的距离：点击开关，快捷键 5"><span class="measure-dot guide" aria-hidden="true"></span>辅助线<span class="measure-hot">5</span></button>
+    </span>
     <span class="status-item status-flag on" id="statusSnap" title="智能吸附">吸附</span>
     <span class="status-item status-flag" id="statusGrid" title="网格">网格</span>
     <span class="status-item status-flag on" id="statusSaved" title="离线自动保存">已自动保存</span>

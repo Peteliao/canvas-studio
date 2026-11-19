@@ -111,6 +111,11 @@ export interface Settings {
     rulers: boolean;
     guides: boolean;
     guideLines: boolean;
+    measureSize: boolean;
+    measureCanvas: boolean;
+    measureGap: boolean;
+    measureAlign: boolean;
+    measureGuide: boolean;
     gridSize: number;
     alignBase: 'selection' | 'canvas';
     inspectorVisible: boolean;

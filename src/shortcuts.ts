@@ -8,7 +8,7 @@ import { setSelection, deselectAll } from './selection';
 import { duplicateSelected, deleteSelected, addShape, moveSelected } from './elements';
 import { exportConfig } from './project';
 import { groupSelected, ungroupSelected, expandGroupIds } from './layerlist';
-import { toggleSetting } from './theme';
+import { toggleSetting, toggleMeasureType } from './theme';
 import { newProject } from './projects';
 import { showShortcuts } from './actions';
 import { setTool } from './tools';
@@ -67,6 +67,14 @@ export function bindHotkeys(): void {
         if (!ctrl && !e.altKey && (e.key === 'p' || e.key === 'P')) { setTool(state.tool === 'pen' ? 'select' : 'pen'); return; }
         if (!ctrl && !e.altKey && (e.key === 'b' || e.key === 'B')) { setTool('bucket'); return; }
         if (!ctrl && !e.altKey && (e.key === 'r' || e.key === 'R')) { addShape('rect'); return; }
+        // 数字键 1–5：单独开关五类标注（尺寸 / 边距 / 间距 / 对齐 / 辅助线）
+        if (!ctrl && !e.altKey && e.key >= '1' && e.key <= '5' && e.key.length === 1) {
+            e.preventDefault();
+            const kinds = ['size', 'canvas', 'gap', 'align', 'guide'] as const;
+            const kind = kinds[Number(e.key) - 1];
+            if (kind) toggleMeasureType(kind);
+            return;
+        }
         if (state.pen) {
             if (e.key === 'Enter') { e.preventDefault(); finishPen(false); return; }
             if (e.key === 'Escape') { e.preventDefault(); cancelPen(); return; }

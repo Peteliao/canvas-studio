@@ -10,6 +10,7 @@ import { setSelection } from './selection';
 import { saveSettings } from './db';
 import { bucketSlotLabel, setBucketColor, syncBucketSwatch } from './bucket';
 import { updateCanvasBg } from './styles';
+import { syncRailStrokeWidth } from './railstroke';
 import { startTextEdit } from './richtext';
 import type { BlendMode, ShadowType } from './types';
 
@@ -65,6 +66,7 @@ export function applyStyleChange(): void {
         e.stroke = Object.assign({}, st); e.shadow = Object.assign({}, sh); e.blendMode = blend;
         syncElement(e.id);
     });
+    syncRailStrokeWidth();
     scheduleCommit();
 }
 

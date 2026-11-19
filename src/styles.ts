@@ -8,6 +8,7 @@ import { showOnly } from './panel';
 import { currentLineStyle, currentWavyDash } from './interaction';
 import { applyInlineStyle } from './richtext';
 import { drawMeasure } from './measure';
+import { syncRailStrokeWidth } from './railstroke';
 import type { FillMode } from './types';
 
 export function updateCanvasBg(source?: string): void {
@@ -108,6 +109,7 @@ export function updateLineStyle(source?: string): void {
         if (e.type === 'line') $<HTMLInputElement>('geoH').value = String(Math.round(lineHeightFor(e)));
     });
     drawMeasure();
+    syncRailStrokeWidth();
     scheduleCommit();
 }
 

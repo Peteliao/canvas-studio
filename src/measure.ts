@@ -285,7 +285,10 @@ export function drawMeasure(): void {
     layer.textContent = '';
     if (!state.settings.guides) return;
     const guideSel = currentGuide();
-    if (guideSel) { drawGuideSelectionMeasure(layer, guideSel); return; }
+    if (guideSel) {
+        if (state.settings.measureGuide !== false) drawGuideSelectionMeasure(layer, guideSel);
+        return;
+    }
     if (!state.selection.length) return;
     const box = selectionAABB();
     if (!box) return;
@@ -340,133 +343,141 @@ export function drawMeasure(): void {
     };
 
     /* ---- 1. 自身尺寸：贴着物件自身边缘的 W / H 尺寸线（旋转后随物件倾斜） ---- */
-    const sizeW = single ? single.w : box.w;
-    const sizeH = single ? lineHeightFor(single) : box.h;
     const angle = single ? ((Math.round(single.rotation) % 360) + 360) % 360 : 0;
     const rotated = !!(single && angle !== 0);
     const rot = rotated ? rotatorWorld(single!) : null;
-    // 物件四角（屏幕坐标）：多选或未旋转时等价于 AABB
-    const corner: Point[] = (() => {
-        if (!single) {
-            return [{ x: X(box.left), y: Y(box.top) }, { x: X(box.right), y: Y(box.top) },
-                { x: X(box.right), y: Y(box.bottom) }, { x: X(box.left), y: Y(box.bottom) }];
-        }
-        const a = single.rotation * Math.PI / 180, cos = Math.cos(a), sin = Math.sin(a);
-        const P = pivotWorld(single);
-        const px = single.pivotX * single.w, py = single.pivotY * sizeH;
-        return [[0, 0], [single.w, 0], [single.w, sizeH], [0, sizeH]].map(([lx, ly]) => {
-            const dx = lx - px, dy = ly - py;
-            return {
-                x: X(P.x + dx * cos - dy * sin),
-                y: Y(P.y + dx * sin + dy * cos)
-            };
-        });
-    })();
-    const rad = single ? single.rotation * Math.PI / 180 : 0;
-    const upN = { x: Math.sin(rad), y: -Math.cos(rad) };      // 顶边外法线（屏幕方向）
-    const leftN = { x: -Math.cos(rad), y: -Math.sin(rad) };   // 左边外法线
-    const off = 18;
-    const [cTL, cTR, cBR, cBL] = corner;
-    // 尺寸线过分贴近视口边缘时翻到对侧，延伸线同步跟随
-    const normal = (p: Point, n: Point, s: number): Point => ({ x: p.x + n.x * off * s, y: p.y + n.y * off * s });
-    const vw = $('viewport').clientWidth;
-    let wA0 = cTL, wB0 = cTR;
-    let wA = normal(wA0, upN, 1), wB = normal(wB0, upN, 1);
-    if (Math.min(wA.y, wB.y) < 12) {
-        wA0 = cBL; wB0 = cBR;
-        wA = normal(wA0, upN, -1); wB = normal(wB0, upN, -1);
-    }
-    let hA0 = cTL, hB0 = cBL;
-    let hA = normal(hA0, leftN, 1), hB = normal(hB0, leftN, 1);
-    if (Math.min(hA.x, hB.x) < 12 || Math.max(hA.x, hB.x) > vw - 12) {
-        hA0 = cTR; hB0 = cBR;
-        hA = normal(hA0, leftN, -1); hB = normal(hB0, leftN, -1);
-    }
-    sizeLine(measureDimSeg(wA.x, wA.y, wB.x, wB.y));
-    // 延伸线：把尺寸线端点接回物件角点，旋转后也能看清对应哪条边
-    sizeExt(`M ${round2(wA0.x)} ${round2(wA0.y)} L ${round2(wA.x)} ${round2(wA.y)} M ${round2(wB0.x)} ${round2(wB0.y)} L ${round2(wB.x)} ${round2(wB.y)}`);
-    const tW = rotated ? 0.28 : 0.5;
-    addTag('', d => {
-        tagKey(d, 'W');
-        tagVal(d, sizeW, v => measureApplySize('w', v), '宽度');
-    }, round2(wA.x + (wB.x - wA.x) * tW), round2(wA.y + (wB.y - wA.y) * tW),
-        { mode: 'center', title: '宽度：点击数值可直接修改（↑↓ 微调，Shift 加速）' });
-
-    sizeLine(measureDimSeg(hA.x, hA.y, hB.x, hB.y));
-    sizeExt(`M ${round2(hA0.x)} ${round2(hA0.y)} L ${round2(hA.x)} ${round2(hA.y)} M ${round2(hB0.x)} ${round2(hB0.y)} L ${round2(hB.x)} ${round2(hB.y)}`);
-    addTag('', d => {
-        tagKey(d, 'H');
-        if (single && single.type === 'line') {
-            const s = measureText(d, String(Math.round(sizeH)));
-            s.title = '线条显示高度由粗细决定，请在「线条样式」中调整粗细';
-        } else tagVal(d, sizeH, v => measureApplySize('h', v), '高度');
-    }, round2((hA.x + hB.x) / 2), round2((hA.y + hB.y) / 2),
-        { mode: 'center', title: '高度：点击数值可直接修改（↑↓ 微调，Shift 加速）' });
-
-    if (rotated && rot) {
-        const rx = X(rot.x), ry = Y(rot.y);
-        addTag('', d => {
-            tagKey(d, '∠');
-            if (locked) measureText(d, angle + '°');
-            else {
-                measureNum(d, angle, v => { $<HTMLInputElement>('geoR').value = String(v); updateGeo('r'); }, '旋转角度');
-                measureText(d, '°');
+    if (state.settings.measureSize !== false) {
+        const sizeW = single ? single.w : box.w;
+        const sizeH = single ? lineHeightFor(single) : box.h;
+        // 物件四角（屏幕坐标）：多选或未旋转时等价于 AABB
+        const corner: Point[] = (() => {
+            if (!single) {
+                return [{ x: X(box.left), y: Y(box.top) }, { x: X(box.right), y: Y(box.top) },
+                    { x: X(box.right), y: Y(box.bottom) }, { x: X(box.left), y: Y(box.bottom) }];
             }
-        }, rx, ry - 24, { mode: 'center', title: '旋转角度：点击数值可直接修改' });
+            const a = single.rotation * Math.PI / 180, cos = Math.cos(a), sin = Math.sin(a);
+            const P = pivotWorld(single);
+            const px = single.pivotX * single.w, py = single.pivotY * sizeH;
+            return [[0, 0], [single.w, 0], [single.w, sizeH], [0, sizeH]].map(([lx, ly]) => {
+                const dx = lx - px, dy = ly - py;
+                return {
+                    x: X(P.x + dx * cos - dy * sin),
+                    y: Y(P.y + dx * sin + dy * cos)
+                };
+            });
+        })();
+        const rad = single ? single.rotation * Math.PI / 180 : 0;
+        const upN = { x: Math.sin(rad), y: -Math.cos(rad) };      // 顶边外法线（屏幕方向）
+        const leftN = { x: -Math.cos(rad), y: -Math.sin(rad) };   // 左边外法线
+        const off = 18;
+        const [cTL, cTR, cBR, cBL] = corner;
+        // 尺寸线过分贴近视口边缘时翻到对侧，延伸线同步跟随
+        const normal = (p: Point, n: Point, s: number): Point => ({ x: p.x + n.x * off * s, y: p.y + n.y * off * s });
+        const vw = $('viewport').clientWidth;
+        let wA0 = cTL, wB0 = cTR;
+        let wA = normal(wA0, upN, 1), wB = normal(wB0, upN, 1);
+        if (Math.min(wA.y, wB.y) < 12) {
+            wA0 = cBL; wB0 = cBR;
+            wA = normal(wA0, upN, -1); wB = normal(wB0, upN, -1);
+        }
+        let hA0 = cTL, hB0 = cBL;
+        let hA = normal(hA0, leftN, 1), hB = normal(hB0, leftN, 1);
+        if (Math.min(hA.x, hB.x) < 12 || Math.max(hA.x, hB.x) > vw - 12) {
+            hA0 = cTR; hB0 = cBR;
+            hA = normal(hA0, leftN, -1); hB = normal(hB0, leftN, -1);
+        }
+        sizeLine(measureDimSeg(wA.x, wA.y, wB.x, wB.y));
+        // 延伸线：把尺寸线端点接回物件角点，旋转后也能看清对应哪条边
+        sizeExt(`M ${round2(wA0.x)} ${round2(wA0.y)} L ${round2(wA.x)} ${round2(wA.y)} M ${round2(wB0.x)} ${round2(wB0.y)} L ${round2(wB.x)} ${round2(wB.y)}`);
+        const tW = rotated ? 0.28 : 0.5;
+        addTag('', d => {
+            tagKey(d, 'W');
+            tagVal(d, sizeW, v => measureApplySize('w', v), '宽度');
+        }, round2(wA.x + (wB.x - wA.x) * tW), round2(wA.y + (wB.y - wA.y) * tW),
+            { mode: 'center', title: '宽度：点击数值可直接修改（↑↓ 微调，Shift 加速）' });
+
+        sizeLine(measureDimSeg(hA.x, hA.y, hB.x, hB.y));
+        sizeExt(`M ${round2(hA0.x)} ${round2(hA0.y)} L ${round2(hA.x)} ${round2(hA.y)} M ${round2(hB0.x)} ${round2(hB0.y)} L ${round2(hB.x)} ${round2(hB.y)}`);
+        addTag('', d => {
+            tagKey(d, 'H');
+            if (single && single.type === 'line') {
+                const s = measureText(d, String(Math.round(sizeH)));
+                s.title = '线条显示高度由粗细决定，请在「线条样式」中调整粗细';
+            } else tagVal(d, sizeH, v => measureApplySize('h', v), '高度');
+        }, round2((hA.x + hB.x) / 2), round2((hA.y + hB.y) / 2),
+            { mode: 'center', title: '高度：点击数值可直接修改（↑↓ 微调，Shift 加速）' });
+
+        if (rotated && rot) {
+            const rx = X(rot.x), ry = Y(rot.y);
+            addTag('', d => {
+                tagKey(d, '∠');
+                if (locked) measureText(d, angle + '°');
+                else {
+                    measureNum(d, angle, v => { $<HTMLInputElement>('geoR').value = String(v); updateGeo('r'); }, '旋转角度');
+                    measureText(d, '°');
+                }
+            }, rx, ry - 24, { mode: 'center', title: '旋转角度：点击数值可直接修改' });
+        }
     }
     /* ---- 2. 相邻物件间距（近处才标注，避免远处长线干扰） ---- */
-    const gaps = neighborGapsFor(box, state.model.elements, state.selection)
-        .filter(g => Math.abs(g.gap) * z <= MEASURE_LIMIT.gap)
-        .sort((a, b) => Math.abs(a.gap) - Math.abs(b.gap));
-    gaps.forEach(g => {
-        gapLine(g.axis === 'h'
-            ? measureDimH(X(g.x1), X(g.x2), Y(g.y))
-            : measureDimV(X(g.x), Y(g.y1), Y(g.y2)));
-        const ax = g.axis === 'h' ? (X(g.x1) + X(g.x2)) / 2 : X(g.x);
-        const ay = g.axis === 'h' ? Y(g.y) : (Y(g.y1) + Y(g.y2)) / 2;
-        const other = getEl(g.otherId);
-        const nm = other ? other.name : '相邻物件';
-        const title = `与「${nm}」的${GAP_SIDE_NAME[g.side]}侧间距` + (g.gap < 0 ? '（负值表示重叠）' : '') + '：点击数值可直接修改';
-        addTag('gap', d => {
-            tagKey(d, GAP_ARROW[g.side]);
-            tagVal(d, g.gap, v => applyNeighborGap(g, v), title);
-        }, round2(ax), round2(ay), { mode: 'above', title });
-    });
+    if (state.settings.measureGap !== false) {
+        const gaps = neighborGapsFor(box, state.model.elements, state.selection)
+            .filter(g => Math.abs(g.gap) * z <= MEASURE_LIMIT.gap)
+            .sort((a, b) => Math.abs(a.gap) - Math.abs(b.gap));
+        gaps.forEach(g => {
+            gapLine(g.axis === 'h'
+                ? measureDimH(X(g.x1), X(g.x2), Y(g.y))
+                : measureDimV(X(g.x), Y(g.y1), Y(g.y2)));
+            const ax = g.axis === 'h' ? (X(g.x1) + X(g.x2)) / 2 : X(g.x);
+            const ay = g.axis === 'h' ? Y(g.y) : (Y(g.y1) + Y(g.y2)) / 2;
+            const other = getEl(g.otherId);
+            const nm = other ? other.name : '相邻物件';
+            const title = `与「${nm}」的${GAP_SIDE_NAME[g.side]}侧间距` + (g.gap < 0 ? '（负值表示重叠）' : '') + '：点击数值可直接修改';
+            addTag('gap', d => {
+                tagKey(d, GAP_ARROW[g.side]);
+                tagVal(d, g.gap, v => applyNeighborGap(g, v), title);
+            }, round2(ax), round2(ay), { mode: 'above', title });
+        });
+    }
 
     /* ---- 3. 边缘对齐差（0 时显示绿色“对齐”徽标） ---- */
-    const aligns = alignmentMeasures(box, state.model.elements, state.selection)
-        .filter(a => Math.abs(a.delta) * z <= MEASURE_LIMIT.align);
-    aligns.forEach(a => {
-        const lenPx = (a.line.axis === 'h' ? Math.abs(X(a.line.x2) - X(a.line.x1)) : Math.abs(Y(a.line.y2) - Y(a.line.y1)));
-        const aligned = Math.abs(a.delta) < 0.5;
-        if (!aligned && lenPx > 6) {
-            alignLine(a.line.axis === 'h'
-                ? measureDimH(X(a.line.x1), X(a.line.x2), Y(a.line.y), 3)
-                : measureDimV(X(a.line.x), Y(a.line.y1), Y(a.line.y2), 3));
-        }
-        const ax = a.line.axis === 'h' ? (X(a.line.x1) + X(a.line.x2)) / 2 : X(a.line.x);
-        const ay = a.line.axis === 'h' ? Y(a.line.y) : (Y(a.line.y1) + Y(a.line.y2)) / 2;
-        const other = getEl(a.otherId);
-        const title = `与「${other ? other.name : ''}」${ALIGN_EDGE_NAME[a.edge]}对齐差` +
-            (aligned ? '（已对齐）' : '（0=对齐，负=偏上/偏左）：点击数值可直接修改');
-        addTag('adist' + (aligned ? ' aligned' : ''), d => {
-            if (aligned) { tagKey(d, '✓'); measureText(d, '对齐'); }
-            else { tagKey(d, 'Δ'); tagVal(d, a.delta, v => applyAlignDelta(a, v), title); }
-        }, round2(ax), round2(ay), { mode: 'above', title });
-    });
+    if (state.settings.measureAlign !== false) {
+        const aligns = alignmentMeasures(box, state.model.elements, state.selection)
+            .filter(a => Math.abs(a.delta) * z <= MEASURE_LIMIT.align);
+        aligns.forEach(a => {
+            const lenPx = (a.line.axis === 'h' ? Math.abs(X(a.line.x2) - X(a.line.x1)) : Math.abs(Y(a.line.y2) - Y(a.line.y1)));
+            const aligned = Math.abs(a.delta) < 0.5;
+            if (!aligned && lenPx > 6) {
+                alignLine(a.line.axis === 'h'
+                    ? measureDimH(X(a.line.x1), X(a.line.x2), Y(a.line.y), 3)
+                    : measureDimV(X(a.line.x), Y(a.line.y1), Y(a.line.y2), 3));
+            }
+            const ax = a.line.axis === 'h' ? (X(a.line.x1) + X(a.line.x2)) / 2 : X(a.line.x);
+            const ay = a.line.axis === 'h' ? Y(a.line.y) : (Y(a.line.y1) + Y(a.line.y2)) / 2;
+            const other = getEl(a.otherId);
+            const title = `与「${other ? other.name : ''}」${ALIGN_EDGE_NAME[a.edge]}对齐差` +
+                (aligned ? '（已对齐）' : '（0=对齐，负=偏上/偏左）：点击数值可直接修改');
+            addTag('adist' + (aligned ? ' aligned' : ''), d => {
+                if (aligned) { tagKey(d, '✓'); measureText(d, '对齐'); }
+                else { tagKey(d, 'Δ'); tagVal(d, a.delta, v => applyAlignDelta(a, v), title); }
+            }, round2(ax), round2(ay), { mode: 'above', title });
+        });
+    }
 
     /* ---- 4. 与辅助线的垂直距离 ---- */
-    nearestGuidesToBox(box, 2).filter(({ m }) => m.dist * z <= MEASURE_LIMIT.guide).forEach(({ g, m }) => {
-        guideLine(guideSegPath(m, g, z, state.pan));
-        const ax = (X(m.from.x) + X(m.to.x)) / 2, ay = (Y(m.from.y) + Y(m.to.y)) / 2;
-        addTag('gdist', d => {
-            tagKey(d, '↔');
-            tagVal(d, m.dist, v => applyObjectGuideDistance(g, v), '与辅助线的垂直距离');
-        }, round2(ax), round2(ay), { mode: 'above', title: '与辅助线的垂直距离：点击数值可直接修改' });
-    });
+    if (state.settings.measureGuide !== false) {
+        nearestGuidesToBox(box, 2).filter(({ m }) => m.dist * z <= MEASURE_LIMIT.guide).forEach(({ g, m }) => {
+            guideLine(guideSegPath(m, g, z, state.pan));
+            const ax = (X(m.from.x) + X(m.to.x)) / 2, ay = (Y(m.from.y) + Y(m.to.y)) / 2;
+            addTag('gdist', d => {
+                tagKey(d, '↔');
+                tagVal(d, m.dist, v => applyObjectGuideDistance(g, v), '与辅助线的垂直距离');
+            }, round2(ax), round2(ay), { mode: 'above', title: '与辅助线的垂直距离：点击数值可直接修改' });
+        });
+    }
 
     /* ---- 5. 画布边距（远距离用短引线，避免横穿整幅画布） ---- */
-    if (single) {
+    if (state.settings.measureCanvas !== false && single) {
         const moveBy = (dx: number, dy: number) => moveSelected(round2(dx), round2(dy));
         const spec = [
             { k: '左', v: box.left, dir: 'left', label: '左边距',
@@ -501,7 +512,7 @@ export function drawMeasure(): void {
 
     // 统一排版：尺寸标签优先占位，其余标签依次避让
     const seeds: SeedRect[] = [];
-    if (rotated && rot) {
+    if (state.settings.measureSize !== false && rotated && rot) {
         const rx = X(rot.x), ry = Y(rot.y);
         seeds.push({ l: rx - 9, r: rx + 9, t: ry - 9, b: ry + 9 });
     }

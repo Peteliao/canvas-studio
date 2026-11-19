@@ -123,6 +123,7 @@ export function loadSettings(): Settings {
     const s: Settings = {
         theme: 'light', contrast: 'normal', snap: true, grid: false, rulers: true,
         guides: true, guideLines: true, gridSize: 20, alignBase: 'selection', inspectorVisible: true, inspectorFolded: false,
+        measureSize: true, measureCanvas: true, measureGap: true, measureAlign: true, measureGuide: true,
         activeTab: 'design', recentColors: [], palette: [], projectId: null, projectName: '未命名设计',
         bucketFillColor: '#4f6bff', bucketStrokeColor: '#1c2230'
     };
