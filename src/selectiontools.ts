@@ -1,10 +1,10 @@
 /* 选中物件浮动工具条：临时隔离显示 + 样式刷 */
 import type { CanvasElement, StrokeGradient } from './types';
-import { state } from './state';
+import { state, nodeMap } from './state';
 import { $, $opt, clamp, deepCopy, iconEl, toast } from './utils';
 import { getEl, selectedEls, curveFillOn, curveStrokeOn, makeStroke } from './model';
 import { selectionAABB } from './geometry';
-import { syncElement } from './render';
+import { syncElement, syncNode } from './render';
 import { commit } from './history';
 
 export type StyleMode = 'all' | 'fill' | 'strokeWidth' | 'stroke' | 'width';
@@ -20,6 +20,7 @@ const STYLE_OPTIONS: { mode: StyleMode; icon: string; label: string; short: stri
 
 let measureRefresh: (() => void) | null = null;
 let styleMenuTargetId: string | null = null;
+let stylePreview: { targetId: string; mode: StyleMode } | null = null;
 
 /** 由 measure 模块注入重绘钩子，避免直接循环依赖 */
 export function setSelectionToolsMeasureRefresh(fn: () => void): void {
@@ -112,7 +113,33 @@ export function applyStyleToElement(source: CanvasElement, target: CanvasElement
     return true;
 }
 
+/** 只渲染到 DOM 的临时预览，不修改模型，避免自动保存吸入预览状态 */
+function previewStyleOption(target: CanvasElement, mode: StyleMode): void {
+    const source = getEl(state.stylePickSource || '');
+    if (!source || !styleOptionEnabled(source, target, mode)) {
+        clearStylePreview();
+        return;
+    }
+    if (stylePreview && stylePreview.targetId === target.id && stylePreview.mode === mode) return;
+    clearStylePreview();
+    const preview = deepCopy(target);
+    if (!applyStyleToElement(source, preview, mode)) return;
+    const d = nodeMap.get(target.id);
+    if (!d) return;
+    syncNode(preview, d);
+    stylePreview = { targetId: target.id, mode };
+}
+
+function clearStylePreview(restore = true): void {
+    const preview = stylePreview;
+    stylePreview = null;
+    if (!restore || !preview) return;
+    const el = getEl(preview.targetId), d = nodeMap.get(preview.targetId);
+    if (el && d) syncNode(el, d);
+}
+
 function hideStyleMenu(): void {
+    clearStylePreview();
     const menu = $opt('styleBrushMenu');
     if (menu) { menu.hidden = true; menu.textContent = ''; }
     styleMenuTargetId = null;
@@ -122,6 +149,7 @@ function openStyleMenu(target: CanvasElement, clientX: number, clientY: number):
     const source = getEl(state.stylePickSource || '');
     const menu = $opt('styleBrushMenu');
     if (!source || !menu) return;
+    clearStylePreview();
     menu.textContent = '';
     STYLE_OPTIONS.forEach((opt, i) => {
         if (i === 1) {
@@ -138,6 +166,10 @@ function openStyleMenu(target: CanvasElement, clientX: number, clientY: number):
         b.appendChild(iconEl(opt.icon));
         b.disabled = !styleOptionEnabled(source, target, opt.mode);
         if (b.disabled) b.title = opt.label + '（源物件缺少该项或目标不支持）';
+        b.addEventListener('pointerenter', () => {
+            if (b.disabled) clearStylePreview();
+            else previewStyleOption(target, opt.mode);
+        });
         b.addEventListener('pointerdown', ev => { ev.stopPropagation(); });
         b.addEventListener('click', ev => {
             ev.preventDefault(); ev.stopPropagation();
@@ -166,11 +198,31 @@ function applyStyleFromMenu(opt: { mode: StyleMode; short: string }): void {
     const source = getEl(state.stylePickSource || '');
     const target = getEl(styleMenuTargetId || '');
     if (!source || !target) { hideStyleMenu(); cancelStylePickCore(); return; }
+    clearStylePreview(false);
     if (!applyStyleToElement(source, target, opt.mode)) return;
     syncElement(target.id);
     commit();
     toast(`已应用${opt.short}到「${target.name}」`, 'success');
     hideStyleMenu();
+}
+
+/** 右键：确认悬停中的样式选项并结束样式刷；未悬停时直接结束 */
+export function confirmStyleCommand(): boolean {
+    if (!state.stylePickSource) return false;
+    const preview = stylePreview;
+    const source = getEl(state.stylePickSource);
+    const target = preview ? getEl(preview.targetId) : null;
+    const opt = preview ? STYLE_OPTIONS.find(o => o.mode === preview.mode) : undefined;
+    clearStylePreview(false);
+    hideStyleMenu();
+    const applied = !!(preview && source && target && opt && applyStyleToElement(source, target, opt.mode));
+    if (applied && target && opt) {
+        syncElement(target.id);
+        commit();
+        toast(`已应用${opt.short}到「${target.name}」`, 'success');
+    }
+    cancelStylePick(applied);
+    return true;
 }
 
 function setIsolationCore(on: boolean): void {
@@ -347,6 +399,14 @@ export function bindSelectionTools(): void {
         if (state.stylePickSource) cancelStylePick();
         else startStylePick();
     });
+    const menu = $opt('styleBrushMenu');
+    if (menu) {
+        menu.addEventListener('pointerleave', () => clearStylePreview());
+        menu.addEventListener('pointerover', e => {
+            if (!(e.target as HTMLElement).closest('button')) clearStylePreview();
+        });
+    }
+    window.addEventListener('blur', () => clearStylePreview());
 }
 
 /* 点击面板/检查器时收起样式选项，但保持样式刷模式 */

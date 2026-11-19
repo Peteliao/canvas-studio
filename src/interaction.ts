@@ -7,7 +7,7 @@ import { getEl, selectedEls, sortedElements, buildElement, makeLine, makeCurve, 
 import { lineHeightFor } from './style';
 import { syncElement, renderAll, applySelectionClasses, syncTransform } from './render';
 import { commit } from './history';
-import { viewportRect, adjustZoom } from './view';
+import { viewportRect, setZoom } from './view';
 import { getAABB, pivotWorld, selectionAABB, setPivot } from './geometry';
 import { setSelection, deselectAll, toggleSelection } from './selection';
 import { updateUI, updatePropPanel, syncCurveFillControls } from './panel';
@@ -19,7 +19,7 @@ import { openCropModal } from './cropper';
 import { bucketHitElement, bucketDetectTarget, applyBucketColor, bucketColor, setBucketColor, bucketSlotLabel, updateBucketHover, elementSlotColor } from './bucket';
 import { useColor } from './swatches';
 import { setTool, refreshStudioUI } from './tools';
-import { handleStylePickPointerDown } from './selectiontools';
+import { handleStylePickPointerDown, confirmStyleCommand } from './selectiontools';
 import { setToggleButton } from './theme';
 import { selectGuide, drawGuides, isOverRuler, deleteGuide, guideGeom } from './guides';
 import { drawMeasure } from './measure';
@@ -230,15 +230,36 @@ function drawRotateGuide(it: RotateInteraction, clientX: number, clientY: number
     layer.appendChild(svg);
 }
 
+/** 鼠标右键：确认并结算当前命令 */
+function confirmCurrentCommand(): boolean {
+    if (confirmStyleCommand()) return true;
+    if (state.pen) { finishPen(false); return true; }
+    if (state.isTextEditing) { finishTextEdit(); commit(); return true; }
+    if (state.layerPick) { endRelLayer(); return true; }
+    if (state.interaction && state.interaction.kind !== 'crop') {
+        endInteraction();
+        return true;
+    }
+    return false;
+}
+
 export function initCanvasInteraction(): void {
     const viewport = $('viewport');
     viewport.addEventListener('wheel', e => {
-        if (!e.ctrlKey) return;
         e.preventDefault();
-        adjustZoom(e.deltaY > 0 ? -0.1 : 0.1, e.clientX, e.clientY);
+        const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? viewport.clientHeight : 1;
+        const factor = Math.exp(-e.deltaY * unit * 0.0012);
+        setZoom(state.zoom * factor, e.clientX, e.clientY);
     }, { passive: false });
+    // 阻止中键触发浏览器自动滚动
+    viewport.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
 
     window.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('contextmenu', e => {
+        const t = e.target as HTMLElement;
+        if (!state.isTextEditing && t.closest('input, textarea, select, [contenteditable="true"]')) return;
+        if (confirmCurrentCommand()) e.preventDefault();
+    });
     const syncAnchorCursor = (e: KeyboardEvent): void => {
         const on = !!e.ctrlKey || !!e.metaKey;
         viewport.classList.toggle('anchor-ready', on);
@@ -371,9 +392,17 @@ function elementBelowAt(d: HTMLElement, clientX: number, clientY: number): HTMLE
     return null;
 }
 function onPointerDown(e: PointerEvent): void {
+    const target = e.target as HTMLElement;
+    // 中键拖动平移：不改变选择与当前工具
+    if (e.button === 1) {
+        if (!target.closest('#viewport') || state.interaction) return;
+        state.interaction = { kind: 'pan', lastX: e.clientX, lastY: e.clientY };
+        $('viewport').classList.add('panning');
+        e.preventDefault();
+        return;
+    }
     if (e.button !== 0) return;
     clearAnchorHover();
-    const target = e.target as HTMLElement;
     // 颜料桶下尺寸标注浮层不拦截点击，交由 bucketHitElement 穿透到下方元素
     const bucketMeasure = state.tool === 'bucket' && target.closest && target.closest('.measure-tag');
     if (!bucketMeasure && isChromeUI(target)) return;   // 点击面板不退出编辑态
