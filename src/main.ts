@@ -21,6 +21,7 @@ import { setTool, switchTab, syncInspectorFold } from './tools';
 import { bindSelectionTools } from './selectiontools';
 import { renderSwatches, renderAssetPresets, applyStrokeGradientStops } from './swatches';
 import { renderLayerList } from './layerlist';
+import { renderComponentLibrary } from './components';
 import { renderProjectPanels, flushProjectSave } from './projects';
 import { initRail } from './rail';
 import { initGradientEditors } from './gradeditor';
@@ -69,6 +70,7 @@ async function boot(): Promise<void> {
     setTool('select');
     renderSwatches();
     renderAssetPresets();
+    renderComponentLibrary();
     renderShortcuts();
     renderLayerList();
     switchTab(state.activeTab);

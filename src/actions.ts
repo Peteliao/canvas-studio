@@ -40,6 +40,7 @@ import { saveSettings } from './db';
 import { syncTransform } from './render';
 import { bindShapeParamControls } from './shapepanel';
 import { isInputActive } from './shortcuts';
+import { createComponentFromSelection, detachSelectedComponents } from './components';
 
 type ActionFn = (arg?: string, node?: HTMLElement, e?: Event) => void;
 
@@ -108,6 +109,8 @@ export const ACTIONS: Record<string, ActionFn> = {
     ungroupSelected: () => ungroupSelected(),
     linkSelected: () => { linkSelected(); updateUI(); commit(); },
     unlinkSelected: () => { unlinkSelected(); updateUI(); commit(); },
+    createComponent: () => { void createComponentFromSelection(); },
+    detachComponent: () => { void detachSelectedComponents(); },
     collapseAllGroups: () => collapseAllGroups(),
     renameSelected: () => { void renameSelected(); },
     selectAll: () => setSelection(expandGroupIds(state.model.elements.map(e => e.id))),

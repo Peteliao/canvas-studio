@@ -280,6 +280,11 @@
       <button class="text-btn" id="btnUnlinkSelected" data-act="unlinkSelected" title="断开所选物件的关联同步"><svg class="ic"><use href="#i-unlink"/></svg> 断开关联</button>
     </div>
 
+    <div class="tool-group" id="componentTools" style="display:none;">
+      <button class="text-btn" id="btnCreateComponent" data-act="createComponent" title="将所选元素创建为可复用组件"><svg class="ic"><use href="#i-group"/></svg> 创建组件</button>
+      <button class="text-btn" id="btnDetachComponent" data-act="detachComponent" title="保留所选元素，断开组件关联"><svg class="ic"><use href="#i-unlink"/></svg> 脱离组件</button>
+    </div>
+
     <div class="contextbar-spacer"></div>
 
     <div class="tool-group">
@@ -897,6 +902,12 @@
           <section class="panel-card">
             <div class="card-head"><span><svg class="ic"><use href="#i-font"/></svg> 文字样式预设</span></div>
             <div class="preset-list" id="textPresets"></div>
+          </section>
+          <section class="panel-card">
+            <div class="card-head"><span><svg class="ic"><use href="#i-group"/></svg> 组件库</span><span class="badge" id="componentCountBadge">0</span></div>
+            <button class="btn-secondary" id="btnCreateComponentPanel" data-act="createComponent"><svg class="ic"><use href="#i-plus"/></svg> 将选区创建为组件</button>
+            <p class="hint-text">修改主组件后自动同步实例；实例可单独改属性或脱离</p>
+            <div class="component-list" id="componentList"></div>
           </section>
           <section class="panel-card">
             <div class="card-head"><span><svg class="ic"><use href="#i-image"/></svg> 本地图片</span></div>

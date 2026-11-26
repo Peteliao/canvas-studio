@@ -14,10 +14,12 @@ export async function exportConfig(): Promise<void> {
     normalizeZ();
     // 仅打包仍被引用的资源，避免历史图片让项目文件持续膨胀
     const used = new Set<string>();
-    state.model.elements.forEach(e => {
+    const collectAssets = (elements: typeof state.model.elements): void => elements.forEach(e => {
         if (e.image) { used.add(e.image.assetId); used.add(e.image.originalAssetId); }
         if (e.maskAssetId) used.add(e.maskAssetId);
     });
+    collectAssets(state.model.elements);
+    state.model.components?.forEach(component => collectAssets(component.elements));
     const assets: Record<string, string> = {};
     used.forEach(id => { if (state.assets[id]) assets[id] = state.assets[id]; });
     const payload = {
@@ -26,6 +28,7 @@ export async function exportConfig(): Promise<void> {
         canvas: state.model.canvas,
         elements: state.model.elements,
         guides: state.model.guides || [],
+        components: state.model.components,
         assets
     };
     const safeName = name.replace(/[\\/:*?"<>|]/g, '_');

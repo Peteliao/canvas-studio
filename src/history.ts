@@ -1,10 +1,11 @@
 /* 历史、自动保存与载入 */
 import { STORAGE_KEY, VERSION, MAX_HISTORY } from './constants';
 import { state } from './state';
-import { $, toast } from './utils';
+import { $, toast, uid } from './utils';
+import { syncModelComponents } from './component-core';
 import { validateProject, snapshotJSON, normalizeZ } from './model';
 import { dbAvailable, idbPut, idbAll } from './db';
-import { renderAll, syncCanvasSize } from './render';
+import { renderAll, syncCanvasSize, syncElement } from './render';
 import { syncBackgroundControls, updateUI } from './panel';
 import { queueProjectSave } from './projects';
 import { resetLinkSnapshots, syncLinkedOnCommit } from './linked';
@@ -44,6 +45,12 @@ export function commit(): void {
     if (isApplyingHistory) return;
     // 关联副本：先按上次签名把变化成员的样式 / 尺寸传播给同组，再生成历史
     syncLinkedOnCommit();
+    if (syncModelComponents(state.model, () => uid('el'))) {
+        if (state.isTextEditing) {
+            // 文本编辑期间只同步实例节点，避免整画布重绘提前结束输入。
+            state.model.elements.forEach(el => { if (el.componentInstanceId) syncElement(el.id); });
+        } else renderAll();
+    }
     normalizeZ();
     const json = snapshotJSON();
     // 编辑中的防抖提交只自动保存，避免每次击键都产生一条撤销记录
@@ -75,7 +82,7 @@ export function applySnapshot(json: string): boolean {
     state.isTextEditing = false;
     state.editingId = null;
     state.interaction = null;
-    state.model = { version: VERSION, name: parsed.name || state.projectName, canvas: parsed.canvas, elements: parsed.elements, guides: parsed.guides || [] };
+    state.model = { version: VERSION, name: parsed.name || state.projectName, canvas: parsed.canvas, elements: parsed.elements, guides: parsed.guides || [], components: parsed.components };
     state.guideSel = null;
     if (parsed.assets) Object.assign(state.assets, parsed.assets);
     state.selection = [];
@@ -112,7 +119,7 @@ export async function loadAuto(): Promise<boolean> {
         const parsed = validateProject(JSON.parse(raw));
         const stored = await idbAll();
         state.assets = Object.assign({}, stored, parsed.assets || {});
-        state.model = { version: VERSION, name: parsed.name || state.projectName || '未命名设计', canvas: parsed.canvas, elements: parsed.elements, guides: parsed.guides || [] };
+        state.model = { version: VERSION, name: parsed.name || state.projectName || '未命名设计', canvas: parsed.canvas, elements: parsed.elements, guides: parsed.guides || [], components: parsed.components };
         undoStack = [snapshotJSON()];
         historyIndex = 0;
         resetLinkSnapshots();

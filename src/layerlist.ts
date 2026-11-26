@@ -39,7 +39,7 @@ export function renderLayerList(): void {
         const meta = document.createElement('div'); meta.className = 'layer-meta';
         const nm = document.createElement('div'); nm.className = 'layer-name'; nm.textContent = el.name || TYPE_LABELS[el.type];
         const sub = document.createElement('div'); sub.className = 'layer-sub';
-        sub.textContent = `${TYPE_LABELS[el.type] || el.type} · ${Math.round(el.w)}×${Math.round(el.h)}` + (el.groupId ? ' · 组内' : '');
+        sub.textContent = `${TYPE_LABELS[el.type] || el.type} · ${Math.round(el.w)}×${Math.round(el.h)}` + (el.groupId ? ' · 组内' : '') + (el.componentId ? (el.componentInstanceId ? ' · 组件实例' : ' · 组件主件') : '');
         meta.appendChild(nm); meta.appendChild(sub); row.appendChild(meta);
         const act = document.createElement('div'); act.className = 'layer-actions';
         const mk = (icon: string, title: string, fn: () => void, danger?: boolean) => {
@@ -139,6 +139,7 @@ export function expandGroupIds(ids: string[]): string[] {
 export function groupSelected(): void {
     const els = selectedEls();
     if (els.length < 2) { toast('请至少选中两个元素再组合', 'error'); return; }
+    if (els.some(el => !!el.componentId)) { toast('组件主件或实例请先脱离组件再组合', 'error'); return; }
     const gid = uid('grp');
     els.forEach(e => { e.groupId = gid; syncElement(e.id); });
     renderAll(); applySelectionClasses(); commit();
@@ -148,6 +149,7 @@ export function groupSelected(): void {
 export function ungroupSelected(): void {
     const els = selectedEls().filter(e => !!e.groupId);
     if (!els.length) { toast('选中的元素不在组合中', 'error'); return; }
+    if (els.some(el => !!el.componentId)) { toast('组件实例请使用「脱离组件」，不要直接解组', 'error'); return; }
     els.forEach(e => { e.groupId = null; syncElement(e.id); });
     renderAll(); applySelectionClasses(); commit();
     toast(`已解组 ${els.length} 个元素`, 'success');

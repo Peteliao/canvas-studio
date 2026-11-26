@@ -111,6 +111,15 @@ export interface CanvasElement {
     blendMode: BlendMode;
     /** 透明特效标记：高光混白比例（0–1），换色时据此重算渐变；null = 普通元素 */
     effectTint: number | null;
+    componentId: string | null;
+    componentInstanceId: string | null;
+    componentSourceId: string | null;
+}
+
+export interface ComponentDefinition {
+    id: string;
+    name: string;
+    elements: CanvasElement[];
 }
 
 export interface Guide { id: string; angle: number; x: number; y: number; }
@@ -121,6 +130,7 @@ export interface Model {
     canvas: CanvasConfig;
     elements: CanvasElement[];
     guides: Guide[];
+    components?: ComponentDefinition[];
     assets?: Record<string, string>;
 }
 

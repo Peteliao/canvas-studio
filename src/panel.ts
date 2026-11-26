@@ -13,6 +13,7 @@ import { syncStyleControls, defaultStrokeStops } from './swatches';
 import { syncPaintStrokeWidth } from './railstroke';
 import { syncShapeParamPanel } from './shapepanel';
 import { syncLinkTools } from './linked';
+import { renderComponentLibrary } from './components';
 
 export function showOnly(mode: FillMode): void {
     $('bgSolidControls').style.display = mode === 'solid' ? 'flex' : 'none';
@@ -234,6 +235,10 @@ export function updateUI(): void {
     $('booleanTools').style.display = n > 1 ? 'flex' : 'none';
     $('groupTools').style.display = n > 0 ? 'flex' : 'none';
     $('linkTools').style.display = n > 0 ? 'flex' : 'none';
+    const componentElements = selectedEls().filter(el => !!el.componentId);
+    $('componentTools').style.display = n > 0 ? 'flex' : 'none';
+    $('btnCreateComponent').classList.toggle('unavailable', !n || selectedEls().some(el => !!el.componentId));
+    $('btnDetachComponent').classList.toggle('unavailable', !componentElements.length);
     const groupBtn = $('btnGroupSelected');
     groupBtn.classList.toggle('unavailable', n < 2);
     groupBtn.title = n < 2 ? '至少选中两个物件后可组合（Ctrl+G）' : '组合后点击任一成员会同时选中整组（Ctrl+G）';
@@ -245,6 +250,7 @@ export function updateUI(): void {
     $('selCountBadge').textContent = String(n);
     refreshStudioUI();
     syncPaintStrokeWidth();
+    if (state.activeTab === 'assets') renderComponentLibrary();
     if (!n) return;
     const allLocked = selectedEls().every(e => e.locked);
     setIcon($('btnLockToggle'), allLocked ? 'lock' : 'unlock');

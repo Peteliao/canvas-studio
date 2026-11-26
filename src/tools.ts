@@ -10,6 +10,7 @@ import { drawGuides } from './guides';
 import { drawMeasure } from './measure';
 import { renderLayerList } from './layerlist';
 import { renderProjectPanels } from './projects';
+import { renderComponentLibrary } from './components';
 import { syncRailGroupForTool } from './rail';
 import { syncSelectionTools } from './selectiontools';
 import { scheduleAlignHighlight } from './alignguide';
@@ -61,6 +62,7 @@ export function switchTab(name: TabName): void {
     });
     document.querySelectorAll<HTMLElement>('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === name));
     if (name === 'layers') renderLayerList();
+    if (name === 'assets') renderComponentLibrary();
     if (name === 'projects') renderProjectPanels();
 }
 

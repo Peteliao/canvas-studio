@@ -5,22 +5,25 @@ export interface ProjectContent {
     canvas: unknown;
     elements: unknown;
     guides: unknown;
+    components?: unknown;
 }
 
 export function projectContentSignature(project: ProjectContent): string {
-    return JSON.stringify([project.name, project.canvas, project.elements, project.guides]);
+    return JSON.stringify([project.name, project.canvas, project.elements, project.guides, project.components]);
 }
 
 export function remapProjectAssets(project: Model, createId: () => string): Model {
     const ids = new Set(Object.keys(project.assets || {}));
-    project.elements.forEach(el => {
+    const collectIds = (elements: readonly CanvasElement[]): void => elements.forEach(el => {
         if (el.image) { ids.add(el.image.assetId); ids.add(el.image.originalAssetId); }
         if (el.maskAssetId) ids.add(el.maskAssetId);
     });
+    collectIds(project.elements);
+    project.components?.forEach(component => collectIds(component.elements));
     const mapping = new Map(Array.from(ids, id => [id, createId()]));
     const assets: Record<string, string> = {};
     Object.entries(project.assets || {}).forEach(([id, data]) => { assets[mapping.get(id)!] = data; });
-    const elements: CanvasElement[] = project.elements.map(el => ({
+    const remapElement = (el: CanvasElement): CanvasElement => ({
         ...el,
         image: el.image ? {
             ...el.image,
@@ -28,8 +31,10 @@ export function remapProjectAssets(project: Model, createId: () => string): Mode
             originalAssetId: mapping.get(el.image.originalAssetId) || el.image.originalAssetId
         } : null,
         maskAssetId: el.maskAssetId ? mapping.get(el.maskAssetId) || el.maskAssetId : null
-    }));
-    return { ...project, elements, assets: Object.keys(assets).length ? assets : undefined };
+    });
+    const elements = project.elements.map(remapElement);
+    const components = project.components?.map(component => ({ ...component, elements: component.elements.map(remapElement) }));
+    return { ...project, elements, components, assets: Object.keys(assets).length ? assets : undefined };
 }
 
 export function findMatchingProject<T extends { data: string; updated: number }>(items: readonly T[], snapshot: string, matches: (data: string) => boolean = data => data === snapshot): T | null {

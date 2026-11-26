@@ -755,7 +755,16 @@ select:focus { border-color: var(--primary); }
 .grad-color::-webkit-color-swatch { border: none; border-radius: 3px; }
 .grad-pos { width: 52px !important; }
 .grad-add { margin-left: auto; }
-.list-empty { padding: 16px 8px; text-align: center; font-size: 11px; color: var(--text-3); }
+.list-empty { padding: 16px 8px; text-align: center; font-size: 11px; color: var(--text-3); line-height: 1.6; }
+.component-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.component-row { display: flex; align-items: center; gap: 7px; padding: 7px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-surface-2); }
+.component-icon { width: 26px; height: 26px; display: grid; place-items: center; flex-shrink: 0; border-radius: 6px; background: var(--primary-soft); color: var(--primary); }
+.component-icon .ic { width: 14px; height: 14px; }
+.component-meta { flex: 1; min-width: 0; }
+.component-title { font-size: 11px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.component-sub { margin-top: 2px; font-size: 9px; color: var(--text-3); }
+.component-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px; max-width: 104px; }
+.component-actions .mini-btn { padding: 3px 5px; font-size: 9px; }
 
 /* ==================== 模态框 ==================== */
 .modal { display: none; position: fixed; inset: 0; width: 100%; height: 100%; background: rgba(16, 21, 34, .52); backdrop-filter: blur(3px); z-index: 30000; justify-content: center; align-items: center; padding: 20px; }

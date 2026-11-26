@@ -144,6 +144,7 @@ export function linkCompatibility(): { ok: boolean; reason: string } {
     const els = selectedEls();
     if (els.length < 2) return { ok: false, reason: '请至少选中两个物件再建立关联副本' };
     if (els.some(e => e.locked)) return { ok: false, reason: '锁定物件无法建立关联副本，请先解锁' };
+    if (els.some(e => !!e.componentId)) return { ok: false, reason: '组件主件或实例请使用组件同步，不要建立关联副本' };
     const types = Array.from(new Set(els.map(e => e.type)));
     if (types.length > 1) {
         const names = types.map(t => TYPE_LABELS[t] || t).join(' / ');

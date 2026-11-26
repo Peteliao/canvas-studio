@@ -6,7 +6,7 @@ import {
 } from './constants';
 import type {
     Fill, Stroke, StrokeGradient, Shadow, TextStyle, TextRun, LineSpec, Curve, CurveNode,
-    CanvasElement, Guide, Model, ElementType, StrokeStyle, StrokeAlign,
+    CanvasElement, ComponentDefinition, Guide, Model, ElementType, StrokeStyle, StrokeAlign,
     TextSizeMode, CurveNodeType, FontWeight, Point, Box
 } from './types';
 import { state, nodeMap } from './state';
@@ -294,7 +294,10 @@ export function validateElement(raw: unknown): CanvasElement {
         shadow: makeShadow(r.shadow),
         blendMode: enumOf(BLEND_MODES, r.blendMode, 'normal'),
         effectTint: typeof r.effectTint === 'number' && Number.isFinite(r.effectTint)
-            ? clamp(round2(r.effectTint), 0, 1) : null
+            ? clamp(round2(r.effectTint), 0, 1) : null,
+        componentId: typeof r.componentId === 'string' && /^[A-Za-z0-9_]{1,120}$/.test(r.componentId) ? r.componentId : null,
+        componentInstanceId: typeof r.componentInstanceId === 'string' && /^[A-Za-z0-9_]{1,120}$/.test(r.componentInstanceId) ? r.componentInstanceId : null,
+        componentSourceId: typeof r.componentSourceId === 'string' && /^[A-Za-z0-9_]{1,120}$/.test(r.componentSourceId) ? r.componentSourceId : null
     };
     return el;
 }
@@ -320,6 +323,24 @@ export function validateAssets(raw: unknown): Record<string, string> {
         }
     });
     return out;
+}
+export function validateComponent(raw: unknown): ComponentDefinition {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('组件数据格式不正确');
+    const r = raw as Record<string, unknown>;
+    if (typeof r.id !== 'string' || !/^[A-Za-z0-9_]{1,120}$/.test(r.id)) throw new Error('组件 id 不合法');
+    if (!Array.isArray(r.elements) || !r.elements.length || r.elements.length > 200) throw new Error('组件元素数量无效');
+    const ids = new Set<string>();
+    const elements = r.elements.map(e => {
+        const el = validateElement(e);
+        if (ids.has(el.id)) throw new Error('组件内存在重复的元素 id');
+        ids.add(el.id);
+        return { ...el, componentId: null, componentInstanceId: null, componentSourceId: null };
+    });
+    return {
+        id: r.id,
+        name: typeof r.name === 'string' ? r.name.trim().slice(0, 80) || '组件' : '组件',
+        elements
+    };
 }
 /** 统一入口：自动保存快照、撤销历史条目、项目文件都经过这里 */
 export function validateProject(raw: unknown): Model {
@@ -352,12 +373,25 @@ export function validateProject(raw: unknown): Model {
             guides.push(gd);
         });
     }
+    const components: ComponentDefinition[] = [];
+    if (r.components !== undefined) {
+        if (!Array.isArray(r.components)) throw new Error('组件列表格式不正确');
+        if (r.components.length > 100) throw new Error('组件数量超出上限');
+        const cids = new Set<string>();
+        r.components.forEach(rawComponent => {
+            const component = validateComponent(rawComponent);
+            if (cids.has(component.id)) throw new Error('存在重复的组件 id');
+            cids.add(component.id);
+            components.push(component);
+        });
+    }
     return {
         version: VERSION,
         name: typeof r.name === 'string' ? r.name.slice(0, 80) : '未命名设计',
         canvas: { w, h, background: makeFill(c.background), lockedRatio: !!c.lockedRatio },
         elements,
         guides,
+        components: components.length ? components : undefined,
         assets: r.assets ? validateAssets(r.assets) : undefined
     };
 }
@@ -397,6 +431,7 @@ export function snapshotJSON(): string {
         canvas: state.model.canvas,
         elements: state.model.elements,
         guides: state.model.guides || [],
+        components: state.model.components,
         // IndexedDB 不可用时降级为内联资源，保证数据不静默丢失
         assets: dbAvailable ? undefined : state.assets
     });
