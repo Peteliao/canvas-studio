@@ -15,7 +15,8 @@ import { addShape, toggleLock, duplicateSelected, centerOnCanvas, deleteSelected
 import { updateTextStyle, updateTextAlign, updateTextSizeMode } from './richtext';
 import { exportConfig, importConfig, resetToDefault } from './project';
 import { showExportModal, doExport, exportBoundsFor, renderModelToCanvas, canvasToBlob } from './exporter';
-import { buildSVG } from './vector-export';
+import { buildSVG, buildPDF } from './vector-export';
+import { exportInkPadding, padExportBounds, rasterExportScale } from './export-bounds';
 import { closeModal, cropConfirm, replaceImage, handleCropFile } from './cropper';
 import { toggleTheme, toggleSetting, toggleMeasureType } from './theme';
 import type { MeasureKind } from './theme';
@@ -27,7 +28,8 @@ import { copyToClipboardSystem, pasteFromClipboardSystem } from './clipboard';
 import { newProject, createVersion } from './projects';
 import { runSelfTest } from './selftest';
 import { eyedropper, addSwatch, applyHexInput, useColor, applyStyleChange, applyFillAlpha, applyShadowPolar, applyShadowXY, applyShadowPreset, applyStrokePaintMode, applyStrokeGradientGeometry, setStrokeAlign } from './swatches';
-import { setLineStyle, setWavyDash, curveOp, clientToWorld } from './interaction';
+import { setLineStyle, setWavyDash, curveOp, clientToWorld, endInteraction } from './interaction';
+import { pinchViewport } from './touch';
 import { updateElementColor, updateCanvasBg, toggleElBgMode, updateElementBackground, updateElementOpacity, updateElementRadius, updateLineStyle, toggleBgMode } from './styles';
 import { updateCurveFill, updateCurveStroke, updateUI } from './panel';
 import { openBucketPicker, hideBucketHover, bucketEditsSelection, commitBucketPicker, previewBucketPicker, bindPaintPopoverControls, setBucketColor, bucketSlotLabel } from './bucket';
@@ -130,27 +132,42 @@ export async function batchExport(name: string, format: string, transparent: boo
     const list = sortedElements().filter(e => e.exportVisible && e.visible);
     if (!list.length) { toast('画布上没有可导出的元素', 'error'); return; }
     toast(`开始批量导出 ${list.length} 个图层…`, 'success');
+    let failed = 0;
     for (let i = 0; i < list.length; i++) {
         const el = list[i];
-        const a = getAABB(el);
-        const bounds = { x: Math.max(0, a.left - 4), y: Math.max(0, a.top - 4), w: a.w + 8, h: a.h + 8 };
         try {
+            const bounds = padExportBounds(getAABB(el), exportInkPadding(el));
             if (format === 'svg') {
-                const svg = buildSVG({ bounds, elements: [el], transparent: true });
+                const svg = buildSVG({ bounds, elements: [el], transparent });
                 downloadBlob(new Blob([svg], { type: 'image/svg+xml' }), `${name}_${i + 1}_${el.name || el.type}.svg`);
             } else {
-                const c = await renderModelToCanvas(2, { transparent: transparent && format !== 'jpeg' && format !== 'pdf',
+                const c = await renderModelToCanvas(rasterExportScale(bounds), { transparent: transparent && format !== 'jpeg' && format !== 'pdf',
                     opaqueBackground: (format === 'jpeg' || format === 'pdf') ? '#ffffff' : null, bounds, elements: [el] });
-                const mime = format === 'jpeg' ? 'image/jpeg' : format === 'webp' ? 'image/webp' : 'image/png';
-                let blob = await canvasToBlob(c, mime, quality);
-                if (mime === 'image/webp' && blob.type !== 'image/webp') blob = await canvasToBlob(c, 'image/png');
-                downloadBlob(blob, `${name}_${i + 1}_${el.name || el.type}.${format === 'jpeg' ? 'jpg' : format}`);
+                if (format === 'pdf') {
+                    const pdf = buildPDF(c.toDataURL('image/jpeg', quality), c.width, c.height);
+                    downloadBlob(new Blob([pdf], { type: 'application/pdf' }), `${name}_${i + 1}_${el.name || el.type}.pdf`);
+                } else {
+                    const mime = format === 'jpeg' ? 'image/jpeg' : format === 'webp' ? 'image/webp' : 'image/png';
+                    let blob = await canvasToBlob(c, mime, quality);
+                    let extension = format === 'jpeg' ? 'jpg' : format;
+                    if (mime === 'image/webp' && blob.type !== 'image/webp') {
+                        blob = await canvasToBlob(c, 'image/png');
+                        extension = 'png';
+                    }
+                    downloadBlob(blob, `${name}_${i + 1}_${el.name || el.type}.${extension}`);
+                }
             }
-        } catch (err) { console.warn('批量导出单项失败', (err as Error).message); }
+        } catch (err) {
+            failed++;
+            console.warn('批量导出单项失败', (err as Error).message);
+        }
         await new Promise(r => setTimeout(r, 260));
     }
-    toast(`批量导出完成，共 ${list.length} 个文件`, 'success');
-    $('exportModal').style.display = 'none';
+    if (failed) toast(`批量导出结束：成功 ${list.length - failed} 个，失败 ${failed} 个`, 'error');
+    else {
+        toast(`批量导出完成，共 ${list.length} 个文件`, 'success');
+        $('exportModal').style.display = 'none';
+    }
 }
 export function updateExportSummary(): void {
     const s = $('exportSummary'), hint = $opt('exportHint');
@@ -349,29 +366,42 @@ export function bindTouch(): void {
     vp.addEventListener('pointerdown', e => {
         if (e.pointerType !== 'touch') return;
         state.touchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY });
-        if (state.touchPoints.size === 2) {
-            const [a, b] = Array.from(state.touchPoints.values());
-            state.pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y), zoom: state.zoom,
-                cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, panX: state.pan.x, panY: state.pan.y };
-            state.interaction = null;   // 取消单指拖拽，避免抖动
+        if (state.touchPoints.size >= 2) {
+            if (!state.pinch && state.touchPoints.size === 2) {
+                const [a, b] = Array.from(state.touchPoints.values());
+                state.pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y), zoom: state.zoom,
+                    cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, panX: state.pan.x, panY: state.pan.y };
+            }
+            const it = state.interaction;
+            if (it && (it.kind === 'textcreate' || it.kind === 'box')) {
+                $('selectionBox').style.display = 'none';
+                state.boxCache = null;
+                state.interaction = null;
+            } else if (it && it.kind !== 'crop') endInteraction();
+            vp.classList.remove('panning');
+            e.preventDefault();
+            e.stopImmediatePropagation();
         }
     });
     vp.addEventListener('pointermove', e => {
         if (e.pointerType !== 'touch' || !state.touchPoints.has(e.pointerId)) return;
         state.touchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY });
-        if (state.touchPoints.size === 2 && state.pinch) {
+        if (state.touchPoints.size >= 2 && state.pinch) {
             const [a, b] = Array.from(state.touchPoints.values());
             const dist = Math.hypot(a.x - b.x, a.y - b.y);
             const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
-            const z = clamp(state.pinch.zoom * (dist / Math.max(1, state.pinch.dist)), MIN_ZOOM, MAX_ZOOM);
-            state.pan.x = state.pinch.panX + (cx - state.pinch.cx);
-            state.pan.y = state.pinch.panY + (cy - state.pinch.cy);
-            state.zoom = z; syncTransform();
+            const next = pinchViewport(state.pinch, dist, cx, cy, MIN_ZOOM, MAX_ZOOM);
+            state.pan.x = next.panX; state.pan.y = next.panY;
+            state.zoom = next.zoom; syncTransform();
+            e.preventDefault();
+            e.stopImmediatePropagation();
         }
     });
     const end = (e: PointerEvent): void => {
+        const wasPinching = !!state.pinch;
         state.touchPoints.delete(e.pointerId);
         if (state.touchPoints.size < 2) state.pinch = null;
+        if (wasPinching) e.stopImmediatePropagation();
     };
     vp.addEventListener('pointerup', end);
     vp.addEventListener('pointercancel', end);

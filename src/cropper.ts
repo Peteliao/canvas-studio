@@ -5,9 +5,11 @@ import { lineHeightFor } from './style';
 import { syncElement } from './render';
 import { commit } from './history';
 import { putAsset } from './db';
-import type { CanvasElement, CropState } from './types';
+import type { CanvasElement, CropState, ImageRef } from './types';
 
 let cropState: CropState | null = null;
+let cropConfirming = false;
+let cropSession = 0;
 
 export function openCropModal(elId: string): void {
     const el = getEl(elId);
@@ -25,30 +27,31 @@ export async function handleCropFile(input: HTMLInputElement): Promise<void> {
     const file = input.files && input.files[0];
     input.value = '';
     if (!file) return;
+    const session = cropSession, projectId = state.projectId;
     const targetId = cropState ? cropState.elId : (state.selection[0] || null);
     if (!targetId) { toast('请先选中一个元素', 'error'); return; }
     try {
         const dataURL = await readFileAsDataURL(file);
         await loadImage(dataURL);
-        const assetId = uid('img');
-        await putAsset(assetId, dataURL);
         const el = getEl(targetId);
-        if (el) {
-            el.image = { assetId, originalAssetId: assetId, crop: null };
-            syncElement(el.id);
-        }
-        showCrop(dataURL, el || ({ id: targetId, w: 1, h: 1, type: 'rect', borderRadius: 0 } as CanvasElement));
+        if (!el || el.type !== 'image') { toast('请先选中一张图片', 'error'); return; }
+        const assetId = uid('img');
+        if (!await putAsset(assetId, dataURL)) { toast('图片资源保存失败，请检查浏览器存储权限后重试', 'error'); return; }
+        if (session !== cropSession || projectId !== state.projectId) return;
+        const pendingImage: ImageRef = { assetId, originalAssetId: assetId, crop: null };
+        showCrop(dataURL, el, pendingImage);
     } catch (e) { toast('图片载入失败：' + (e as Error).message, 'error'); }
 }
 
-function showCrop(src: string, el: CanvasElement): void {
+function showCrop(src: string, el: CanvasElement, pendingImage: ImageRef | null = null): void {
+    const session = ++cropSession;
     $('cropShade').style.display = 'none';
     $('cropModal').style.display = 'flex';
     const img = $<HTMLImageElement>('cropImg');
-    img.src = src;
     const frame = $('cropFrame');
     frame.classList.toggle('circle', el.type === 'circle');
     const setup = () => {
+        if (session !== cropSession || $('cropModal').style.display !== 'flex') return;
         const stage = $('cropStage');
         const iw = img.offsetWidth, ih = img.offsetHeight;
         if (!iw || !ih) return;
@@ -58,13 +61,15 @@ function showCrop(src: string, el: CanvasElement): void {
         if (fh > ih * 0.9) { fh = ih * 0.9; fw = fh * ratio; }
         const rect = { x: left + (iw - fw) / 2, y: top + (ih - fh) / 2, w: fw, h: fh };
         cropState = {
-            elId: el.id, assetId: el.image ? el.image.originalAssetId : null,
+            elId: el.id, assetId: pendingImage?.assetId || (el.image ? el.image.originalAssetId : null),
             ratio, imgLeft: left, imgTop: top, imgW: iw, imgH: ih,
-            naturalW: img.naturalWidth, naturalH: img.naturalHeight, rect
+            naturalW: img.naturalWidth, naturalH: img.naturalHeight, rect, pendingImage
         };
         paintCropFrame();
     };
-    if (img.complete && img.naturalWidth) setup(); else img.onload = setup;
+    img.onload = setup;
+    img.src = src;
+    if (img.complete && img.naturalWidth) setup();
 }
 
 function paintCropFrame(): void {
@@ -110,7 +115,7 @@ export function initCropInteraction(): void {
             if (dir.includes('e')) { w += dx; }
             if (dir.includes('n')) { y += dy; h -= dy; }
             if (dir.includes('s')) { h += dy; }
-            if (e.shiftKey || cropState.ratio) {
+            if (!e.shiftKey && cropState.ratio) {
                 h = Math.max(24, w / cropState.ratio);
                 if (dir.includes('n')) y = it.rect.y + it.rect.h - h;
             }
@@ -123,34 +128,48 @@ export function initCropInteraction(): void {
     frame.addEventListener('pointercancel', stop);
 }
 
-export function cropConfirm(): void {
-    if (!cropState) { $('cropModal').style.display = 'none'; return; }
-    const c = cropState;
-    const sx = (c.rect.x - c.imgLeft) / c.imgW * c.naturalW;
-    const sy = (c.rect.y - c.imgTop) / c.imgH * c.naturalH;
-    const sw = c.rect.w / c.imgW * c.naturalW;
-    const sh = c.rect.h / c.imgH * c.naturalH;
-    const outW = Math.max(1, Math.round(sw)), outH = Math.max(1, Math.round(sh));
-    const canvas = document.createElement('canvas');
-    canvas.width = outW; canvas.height = outH;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Canvas 2D context unavailable');
-    ctx.drawImage($<HTMLImageElement>('cropImg'), sx, sy, sw, sh, 0, 0, outW, outH);
-    const dataURL = canvas.toDataURL('image/png');
-    const assetId = uid('crop');
-    putAsset(assetId, dataURL);
-    const el = getEl(c.elId);
-    if (el) {
-        el.image = { assetId, originalAssetId: c.assetId || assetId, crop: { x: sx, y: sy, w: sw, h: sh } };
+export async function cropConfirm(): Promise<void> {
+    if (!cropState) { closeModal('cropModal'); return; }
+    if (cropConfirming) return;
+    cropConfirming = true;
+    const session = cropSession, projectId = state.projectId;
+    try {
+        const c = cropState;
+        const sx = (c.rect.x - c.imgLeft) / c.imgW * c.naturalW;
+        const sy = (c.rect.y - c.imgTop) / c.imgH * c.naturalH;
+        const sw = c.rect.w / c.imgW * c.naturalW;
+        const sh = c.rect.h / c.imgH * c.naturalH;
+        const outW = Math.max(1, Math.round(sw)), outH = Math.max(1, Math.round(sh));
+        const canvas = document.createElement('canvas');
+        canvas.width = outW; canvas.height = outH;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Canvas 2D context unavailable');
+        ctx.drawImage($<HTMLImageElement>('cropImg'), sx, sy, sw, sh, 0, 0, outW, outH);
+        const dataURL = canvas.toDataURL('image/png');
+        const assetId = uid('crop');
+        if (!await putAsset(assetId, dataURL)) { toast('裁剪资源保存失败，请检查浏览器存储权限后重试', 'error'); return; }
+        if (session !== cropSession || projectId !== state.projectId || cropState !== c || $('cropModal').style.display !== 'flex') return;
+        const el = getEl(c.elId);
+        if (!el) { toast('图片元素已不存在', 'error'); return; }
+        const originalAssetId = c.pendingImage?.assetId || c.assetId || assetId;
+        el.image = { assetId, originalAssetId, crop: { x: sx, y: sy, w: sw, h: sh } };
         syncElement(el.id);
+        closeModal('cropModal');
+        commit();
+        toast('裁剪已应用，可再次双击继续编辑原图', 'success');
+    } catch (e) {
+        toast('裁剪失败：' + (e as Error).message, 'error');
+    } finally {
+        cropConfirming = false;
     }
-    $('cropModal').style.display = 'none';
-    cropState = null;
-    commit();
-    toast('裁剪已应用，可再次双击继续编辑原图', 'success');
 }
 
 export function closeModal(id: string): void {
     $(id).style.display = 'none';
-    if (id === 'cropModal') cropState = null;
+    if (id === 'cropModal') {
+        cropSession++;
+        cropState = null;
+        $<HTMLImageElement>('cropImg').onload = null;
+        if (state.interaction?.kind === 'crop') state.interaction = null;
+    }
 }

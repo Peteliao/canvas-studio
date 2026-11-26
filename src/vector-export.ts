@@ -5,7 +5,7 @@ import { curveFillOn, curvePathD, curveStrokeOn } from './model';
 import { fillStops, gradientDefMarkup, hexToRgba, lineHeightFor, strokeDefMarkup, wavyDashSpec, wavyGeom } from './style';
 import { canvasTextWidth, textMeasureCtx } from './render';
 import { layoutText } from './exporter';
-import type { ExportBounds } from './exporter';
+import type { ExportBounds } from './export-bounds';
 import type { CanvasElement, Fill } from './types';
 
 function xmlEscape(s: string): string {
@@ -189,7 +189,11 @@ export function buildSVG(opts: SVGExportOpts): string {
 
 /** 单页 PDF：把 JPEG 以 DCTDecode 图像 XObject 嵌入，纯前端构造 */
 export function buildPDF(jpegDataURL: string, w: number, h: number): Blob {
+    if (!/^data:image\/jpeg;base64,/.test(jpegDataURL) || !Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+        throw new Error('PDF 图片编码失败');
+    }
     const base64 = String(jpegDataURL).split(',')[1] || '';
+    if (!base64) throw new Error('PDF 图片编码失败');
     const bin = atob(base64);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);

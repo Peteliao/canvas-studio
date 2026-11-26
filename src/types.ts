@@ -190,6 +190,7 @@ export interface CropState {
     imgLeft: number; imgTop: number; imgW: number; imgH: number;
     naturalW: number; naturalH: number;
     rect: CropRect;
+    pendingImage: ImageRef | null;
 }
 
 export interface PinchState { dist: number; zoom: number; cx: number; cy: number; panX: number; panY: number; }

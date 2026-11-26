@@ -1,6 +1,6 @@
 /* 全局快捷键 */
 import { state } from './state';
-import { $, round2, dialogCancel, isDialogOpen } from './utils';
+import { $, round2, dialogCancel, visibleModalId } from './utils';
 import { selectedEls } from './model';
 import { undo, redo, scheduleCommit } from './history';
 import { fitToScreen } from './view';
@@ -58,11 +58,18 @@ function measureDigit(e: KeyboardEvent): number | null {
 
 export function bindHotkeys(): void {
     document.addEventListener('keydown', e => {
-        if (isDialogOpen()) {
-            if (e.key === 'Escape') { e.preventDefault(); dialogCancel(); }
+        const modalId = visibleModalId();
+        if (modalId) {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                if (modalId === 'appDialog') dialogCancel();
+                else closeModal(modalId);
+            }
             return;
         }
         if (e.isComposing) return;
+        const keyTarget = e.target instanceof HTMLElement ? e.target : null;
+        if (keyTarget?.closest('button, a, [role="button"]') && (e.key === 'Enter' || e.code === 'Space')) return;
         const ctrl = e.ctrlKey || e.metaKey;
         // 数字键 1–5（或 Alt+1–5）：五类标注；6（或 Alt+6）：智能捕捉
         // 放在文本拦截之前：颜色/滑块等控件聚焦后也能直接使用；输入框内保留普通数字，

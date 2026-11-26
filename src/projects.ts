@@ -3,17 +3,20 @@ import { DB_PROJECTS, DB_VERSIONS } from './constants';
 import { state } from './state';
 import { $, uid, iconEl, toast, appPrompt, appConfirm } from './utils';
 import { storeAll, storePut, storeDelete, saveSettings } from './db';
-import { defaultModel, snapshotJSON } from './model';
+import { defaultModel, snapshotJSON, validateProject } from './model';
 import { applySnapshot, resetHistoryWithSave } from './history';
 import { renderAll, syncCanvasSize } from './render';
 import { syncBackgroundControls, updateUI } from './panel';
 import { resetView } from './view';
 import { refreshStudioUI } from './tools';
+import { findMatchingProject, projectContentSignature } from './project-binding';
+import type { Settings } from './types';
 
 interface ProjectRecord { id: string; name: string; updated: number; data: string; }
 interface VersionRecord { id: string; projectId: string; name: string; created: number; data: string; }
 
 let projectSaveTimer: number | undefined;
+let projectIdPromise: Promise<void> | undefined;
 
 export function queueProjectSave(): void {
     clearTimeout(projectSaveTimer);
@@ -24,26 +27,42 @@ export function flushProjectSave(): void {
     clearTimeout(projectSaveTimer);
     void persistCurrentProject();
 }
-export async function persistCurrentProject(): Promise<void> {
-    if (!state.projectId || !state.model) return;
-    const ok = await storePut(DB_PROJECTS, {
+export async function persistCurrentProject(): Promise<boolean> {
+    if (!state.projectId || !state.model) return false;
+    const record: ProjectRecord = {
         id: state.projectId, name: state.projectName, updated: Date.now(), data: snapshotJSON()
-    });
+    };
+    const ok = await storePut(DB_PROJECTS, record);
     if (!ok) toast('项目列表保存失败，请用「保存项目」导出文件备份', 'error');
+    return ok;
 }
-export async function ensureProjectId(): Promise<void> {
-    if (state.projectId) return;
+export function ensureProjectId(): Promise<void> {
+    if (state.projectId) return Promise.resolve();
+    if (projectIdPromise) return projectIdPromise;
+    projectIdPromise = bindProjectId().finally(() => { projectIdPromise = undefined; });
+    return projectIdPromise;
+}
+async function bindProjectId(): Promise<void> {
     const items = await storeAll<ProjectRecord>(DB_PROJECTS);
-    if (items.length) {
-        items.sort((a, b) => b.updated - a.updated);
-        state.projectId = items[0].id; state.projectName = items[0].name;
+    const current = snapshotJSON();
+    const autosave = validateProject(JSON.parse(current));
+    const match = findMatchingProject(items, current, data => {
+        try {
+            const project = validateProject(JSON.parse(data));
+            return projectContentSignature(project) === projectContentSignature(autosave);
+        } catch { return false; }
+    });
+    if (match) {
+        state.projectId = match.id;
+        state.projectName = match.name;
     } else {
         state.projectId = uid('prj');
         state.projectName = state.model && state.model.name ? state.model.name : '未命名设计';
     }
     state.settings.projectId = state.projectId;
     state.settings.projectName = state.projectName;
-    saveSettings(); await persistCurrentProject();
+    saveSettings();
+    await persistCurrentProject();
 }
 export async function renderProjectPanels(): Promise<void> {
     await ensureProjectId();
@@ -109,25 +128,33 @@ function renderVersionList(): void {
 export async function newProject(): Promise<void> {
     const name = await appPrompt('新项目名称：', '未命名设计', { title: '新建项目' });
     if (!name) return;
-    await persistCurrentProject();
-    state.projectId = uid('prj'); state.projectName = name.trim() || '未命名设计';
-    state.settings.projectId = state.projectId; state.settings.projectName = state.projectName; saveSettings();
+    await ensureProjectId();
+    if (!await persistCurrentProject()) return;
+    const projectId = uid('prj'), projectName = name.trim() || '未命名设计';
+    const settings: Settings = { ...state.settings, projectId, projectName };
+    if (!saveSettings(settings)) { toast('项目归属设置保存失败，请检查浏览器存储权限', 'error'); return; }
+    state.projectId = projectId; state.projectName = projectName; state.settings = settings;
     state.model = defaultModel(); state.model.name = state.projectName;
     state.selection = [];
     renderAll(); syncCanvasSize(); syncBackgroundControls(); resetView(); updateUI();
     resetHistoryWithSave();
-    await persistCurrentProject(); await renderProjectPanels();
+    if (!await persistCurrentProject()) { await renderProjectPanels(); return; }
+    await renderProjectPanels();
     toast('已新建项目：' + state.projectName, 'success');
 }
 export async function switchProject(id: string): Promise<void> {
     const ok = await appConfirm('切换项目会载入该项目的画布，当前未导出的更改会自动保存。继续吗？', { title: '切换项目' });
     if (!ok) return;
-    await persistCurrentProject();
+    await ensureProjectId();
+    if (!await persistCurrentProject()) return;
     const items = await storeAll<ProjectRecord>(DB_PROJECTS);
     const p = items.find(x => x.id === id);
     if (!p) { toast('项目不存在', 'error'); return; }
-    state.projectId = p.id; state.projectName = p.name;
-    state.settings.projectId = p.id; state.settings.projectName = p.name; saveSettings();
+    try { validateProject(JSON.parse(p.data)); }
+    catch { toast('项目数据已损坏，无法打开', 'error'); return; }
+    const settings: Settings = { ...state.settings, projectId: p.id, projectName: p.name };
+    if (!saveSettings(settings)) { toast('项目归属设置保存失败，请检查浏览器存储权限', 'error'); return; }
+    state.projectId = p.id; state.projectName = p.name; state.settings = settings;
     applySnapshot(p.data);
     resetHistoryWithSave();
     await renderProjectPanels(); toast('已切换到：' + p.name, 'success');
@@ -138,7 +165,7 @@ export async function renameProject(id: string, oldName: string): Promise<void> 
     const items = await storeAll<ProjectRecord>(DB_PROJECTS);
     const p = items.find(x => x.id === id); if (!p) return;
     p.name = name.trim() || p.name; p.updated = Date.now();
-    await storePut(DB_PROJECTS, p);
+    if (!await storePut(DB_PROJECTS, p)) { toast('项目重命名失败，请检查浏览器存储权限', 'error'); return; }
     if (id === state.projectId) {
         state.projectName = p.name; state.model.name = p.name;
         state.settings.projectName = p.name; saveSettings(); refreshStudioUI();
@@ -149,10 +176,15 @@ export async function deleteProject(id: string, name: string): Promise<void> {
     if (id === state.projectId) { toast('不能删除当前项目，请先切换到其他项目', 'error'); return; }
     const ok = await appConfirm(`确定删除项目「${name}」吗？此操作不可撤销。`, { title: '删除项目' });
     if (!ok) return;
-    await storeDelete(DB_PROJECTS, id);
+    if (!await storeDelete(DB_PROJECTS, id)) { toast('项目删除失败，请检查浏览器存储权限', 'error'); return; }
     const versions = await storeAll<VersionRecord>(DB_VERSIONS);
-    for (const v of versions.filter(v => v.projectId === id)) await storeDelete(DB_VERSIONS, v.id);
-    renderProjectList(); toast('项目已删除', 'success');
+    let cleanupFailed = false;
+    for (const v of versions.filter(v => v.projectId === id)) {
+        if (!await storeDelete(DB_VERSIONS, v.id)) cleanupFailed = true;
+    }
+    renderProjectList();
+    if (cleanupFailed) toast('项目已删除，但部分版本快照清理失败', 'error');
+    else toast('项目已删除', 'success');
 }
 export async function createVersion(): Promise<void> {
     await ensureProjectId();
@@ -168,14 +200,20 @@ export async function createVersion(): Promise<void> {
 export async function restoreVersion(id: string, name: string): Promise<void> {
     const ok = await appConfirm(`确定恢复到「${name}」吗？当前画布内容会被替换（可用撤销前的自动保存备份）。`, { title: '恢复版本' });
     if (!ok) return;
+    await ensureProjectId();
+    if (!await persistCurrentProject()) return;
     const items = await storeAll<VersionRecord>(DB_VERSIONS);
     const v = items.find(x => x.id === id); if (!v) { toast('版本不存在', 'error'); return; }
+    try { validateProject(JSON.parse(v.data)); }
+    catch { toast('版本数据已损坏，无法恢复', 'error'); return; }
     applySnapshot(v.data);
     resetHistoryWithSave();
+    if (!await persistCurrentProject()) return;
     toast('已恢复版本：' + name, 'success');
 }
 export async function deleteVersion(id: string): Promise<void> {
     const ok = await appConfirm('确定删除这个版本快照吗？', { title: '删除版本' });
     if (!ok) return;
-    await storeDelete(DB_VERSIONS, id); renderVersionList(); toast('版本已删除', 'success');
+    if (!await storeDelete(DB_VERSIONS, id)) { toast('版本删除失败，请检查浏览器存储权限', 'error'); return; }
+    renderVersionList(); toast('版本已删除', 'success');
 }

@@ -437,6 +437,11 @@ function elementBelowAt(d: HTMLElement, clientX: number, clientY: number): HTMLE
     return null;
 }
 function onPointerDown(e: PointerEvent): void {
+    if (e.pointerType === 'touch' && (state.pinch || state.touchPoints.size >= 2)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+    }
     const target = e.target as HTMLElement;
     // 中键拖动平移：不改变选择与当前工具
     if (e.button === 1) {
@@ -689,7 +694,7 @@ function onPointerDown(e: PointerEvent): void {
     }
 }
 function onPointerMove(e: PointerEvent | null): void {
-    if (!e) return;
+    if (!e || (e.pointerType === 'touch' && (state.pinch || state.touchPoints.size >= 2))) return;
     const it = state.interaction;
     if (!it) {
         if (state.tool === 'bucket') { clearAnchorHover(); updateBucketHover(e); return; }

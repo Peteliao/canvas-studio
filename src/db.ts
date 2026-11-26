@@ -115,8 +115,8 @@ export function storeDelete(name: string, key: string): Promise<boolean> {
         } catch { resolve(false); }
     });
 }
-export function saveSettings(): boolean {
-    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings)); return true; }
+export function saveSettings(settings: Settings = state.settings): boolean {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); return true; }
     catch { return false; }
 }
 export function loadSettings(): Settings {

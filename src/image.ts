@@ -14,6 +14,7 @@ export async function handleImageUpload(input: HTMLInputElement): Promise<void> 
     const file = input.files && input.files[0];
     input.value = '';
     if (!file) return;
+    const projectId = state.projectId;
     try {
         const decoded = await decodeImageFile(file);
         const maxDim = 400;
@@ -23,7 +24,11 @@ export async function handleImageUpload(input: HTMLInputElement): Promise<void> 
             w = Math.round(w * k); h = Math.round(h * k);
         }
         const assetId = uid('img');
-        await putAsset(assetId, decoded.dataURL);
+        if (!await putAsset(assetId, decoded.dataURL)) {
+            toast('图片资源保存失败，请检查浏览器存储权限后重试', 'error');
+            return;
+        }
+        if (projectId !== state.projectId) { toast('项目已切换，已取消图片导入', 'error'); return; }
         const el = buildElement('image', 0, 0);
         el.w = w; el.h = h;
         el.image = { assetId, originalAssetId: assetId, crop: null };

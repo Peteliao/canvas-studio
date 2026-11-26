@@ -8,11 +8,13 @@ import { renderAll, syncCanvasSize } from './render';
 import { syncBackgroundControls, updateUI } from './panel';
 import { queueProjectSave } from './projects';
 import { resetLinkSnapshots, syncLinkedOnCommit } from './linked';
+import { flushAssetSet } from './asset-storage';
 
 let undoStack: string[] = [];
 let historyIndex = -1;
 let isApplyingHistory = false;
 let commitTimer: number | undefined;
+let assetFlushWarningShown = false;
 
 export function updateUndoRedoButtons(): void {
     $('btnUndo').style.opacity = historyIndex > 0 ? '1' : '0.35';
@@ -59,10 +61,11 @@ export function commit(): void {
 }
 export async function flushAssets(): Promise<void> {
     if (!dbAvailable || !state.hiddenAssetsDirty.size) return;
-    const ids = Array.from(state.hiddenAssetsDirty);
-    state.hiddenAssetsDirty.clear();
-    for (const id of ids) {
-        if (state.assets[id]) await idbPut(id, state.assets[id]);
+    const complete = await flushAssetSet(state.hiddenAssetsDirty, state.assets, idbPut);
+    if (complete) { assetFlushWarningShown = false; return; }
+    if (!assetFlushWarningShown) {
+        assetFlushWarningShown = true;
+        toast('部分图片资源尚未保存，请保持页面打开并检查浏览器存储权限', 'error');
     }
 }
 export function applySnapshot(json: string): boolean {

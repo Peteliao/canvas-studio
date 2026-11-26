@@ -1,11 +1,12 @@
 import { LEGACY_KEY, STORAGE_KEY, VERSION } from './constants';
 import { state } from './state';
-import { $, appConfirm, appPrompt, downloadBlob, pickFile, toast } from './utils';
-import { normalizeZ, validateProject } from './model';
-import { renderAll, syncCanvasSize } from './render';
-import { commit, resetHistory } from './history';
-import { syncBackgroundControls, updateUI } from './panel';
+import { $, appConfirm, appPrompt, downloadBlob, pickFile, toast, uid } from './utils';
+import { normalizeZ, snapshotJSON, validateProject } from './model';
+import { applySnapshot, resetHistoryWithSave } from './history';
 import { idbClear, putAsset, saveSettings } from './db';
+import { ensureProjectId, persistCurrentProject, renderProjectPanels } from './projects';
+import { remapProjectAssets } from './project-binding';
+import type { Settings } from './types';
 
 export async function exportConfig(): Promise<void> {
     const name = await appPrompt('请输入保存的项目名称：', '设计项目', { title: '保存项目' });
@@ -41,16 +42,34 @@ export async function importProjectFile(file: File): Promise<void> {
     try {
         const text = await file.text();
         const parsed = validateProject(JSON.parse(text));
-        const assets = parsed.assets || {};
-        for (const [id, data] of Object.entries(assets)) await putAsset(id, data);
-        state.model = { version: VERSION, name: parsed.name || file.name.replace(/\.[^.]+$/, ''), canvas: parsed.canvas, elements: parsed.elements, guides: parsed.guides || [] };
-        state.projectName = state.model.name;
-        state.settings.projectName = state.projectName; saveSettings();
-        state.selection = [];
-        resetHistory();
-        renderAll(); syncCanvasSize(); syncBackgroundControls(); updateUI();
-        commit();
-        toast('项目载入成功', 'success');
+        const imported = remapProjectAssets(parsed, () => uid('img'));
+        imported.name = imported.name || file.name.replace(/\.[^.]+$/, '') || '未命名设计';
+        await ensureProjectId();
+        const sourceProjectId = state.projectId;
+        const sourceSnapshot = snapshotJSON();
+        if (!await persistCurrentProject()) return;
+        for (const [id, data] of Object.entries(imported.assets || {})) {
+            if (!await putAsset(id, data)) {
+                toast('项目资源保存失败，已停止导入；请检查浏览器存储权限后重试', 'error');
+                return;
+            }
+        }
+        if (state.projectId !== sourceProjectId || snapshotJSON() !== sourceSnapshot) {
+            toast('导入已取消：项目在载入期间发生变化，请重新导入', 'error');
+            return;
+        }
+        const projectId = uid('prj');
+        const settings: Settings = { ...state.settings, projectId, projectName: imported.name };
+        if (!saveSettings(settings)) { toast('项目归属设置保存失败，已停止导入', 'error'); return; }
+        state.projectId = projectId;
+        state.projectName = imported.name;
+        state.settings = settings;
+        if (!applySnapshot(JSON.stringify({ ...imported, assets: undefined }))) return;
+        resetHistoryWithSave();
+        const saved = await persistCurrentProject();
+        await renderProjectPanels();
+        if (saved) toast('项目载入成功', 'success');
+        else toast('项目已载入，但项目列表保存失败，请立即导出文件备份', 'error');
     } catch (e) {
         toast('无法打开文件：' + (e as Error).message, 'error');
     }

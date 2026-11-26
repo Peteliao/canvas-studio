@@ -8,9 +8,9 @@ import { getAABB } from './geometry';
 import { shapePath } from './boolean';
 import { buildPDF, buildSVG } from './vector-export';
 import { batchExport, updateExportSummary } from './actions';
+import { exportInkPadding, padExportBounds, rasterExportScale, unionExportBounds } from './export-bounds';
+import type { ExportBounds } from './export-bounds';
 import type { CanvasElement, Fill, TextLine, TextRun, TextStyle } from './types';
-
-export interface ExportBounds { x: number; y: number; w: number; h: number; }
 export interface ExportOpts {
     transparent?: boolean;
     elements?: CanvasElement[];
@@ -349,10 +349,7 @@ export function exportBoundsFor(scope: string): ExportBounds | null {
     if (scope !== 'selection') return { x: 0, y: 0, w: state.model.canvas.w, h: state.model.canvas.h };
     const sel = selectedEls().filter(e => e.exportVisible && e.visible);
     if (!sel.length) return null;
-    let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
-    sel.forEach(e => { const a = getAABB(e); l = Math.min(l, a.left); t = Math.min(t, a.top); r = Math.max(r, a.right); b = Math.max(b, a.bottom); });
-    const pad = 8;
-    return { x: Math.max(0, l - pad), y: Math.max(0, t - pad), w: Math.min(state.model.canvas.w, r + pad) - Math.max(0, l - pad), h: Math.min(state.model.canvas.h, b + pad) - Math.max(0, t - pad) };
+    return unionExportBounds(sel.map(el => padExportBounds(getAABB(el), exportInkPadding(el))), 0);
 }
 
 export function exportElementsFor(scope: string): CanvasElement[] {
@@ -393,11 +390,11 @@ export async function doExport(): Promise<void> {
             downloadBlob(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }), name + '.svg');
             toast(`已导出 SVG（${Math.round(bounds.w)}×${Math.round(bounds.h)}）`, 'success');
         } else {
-            const targetH = Math.round(exportW * bounds.h / bounds.w);
+            const targetH = Math.max(1, Math.round(exportW * bounds.h / bounds.w));
             const targetPixels = exportW * targetH;
             if (targetPixels > MAX_EXPORT_PIXELS) { toast(`导出尺寸过大（${exportW}×${targetH}），请将宽度调小`, 'error'); return; }
-            const superSample = clamp(Math.sqrt(MAX_EXPORT_PIXELS / targetPixels), 1, 3);
-            const scale = exportW / bounds.w * superSample;
+            const superSample = clamp(Math.sqrt((MAX_EXPORT_PIXELS * 4) / targetPixels), 1, 3);
+            const scale = rasterExportScale(bounds, exportW / bounds.w * superSample);
             const opaque = (format === 'jpeg' || format === 'pdf') ? '#ffffff' : null;
             const large = await renderModelToCanvas(scale, { transparent: transparent && !opaque, opaqueBackground: opaque, bounds, elements });
             const final = document.createElement('canvas');

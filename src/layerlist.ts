@@ -63,8 +63,9 @@ export function renderLayerList(): void {
         });
         row.addEventListener('dblclick', () => renameLayer(el.id));
         row.addEventListener('keydown', e => {
-            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); row.click(); }
-            else if (e.key === 'Delete') { e.preventDefault(); deleteLayer(el.id); }
+            if (e.target !== row) { e.stopPropagation(); return; }
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); row.click(); }
+            else if (e.key === 'Delete') { e.preventDefault(); e.stopPropagation(); deleteLayer(el.id); }
         });
         row.addEventListener('dragstart', e => {
             e.dataTransfer!.setData('text/plain', el.id);

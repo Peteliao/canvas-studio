@@ -121,6 +121,11 @@ export function dialogCancel(): void {
     s.resolve(null);
 }
 export function isDialogOpen(): boolean { return !!dialogState; }
+export function visibleModalId(): string | null {
+    if (dialogState) return 'appDialog';
+    const open = Array.from(document.querySelectorAll<HTMLElement>('.modal')).find(el => el.style.display === 'flex');
+    return open?.id || null;
+}
 
 export function downloadBlob(blob: Blob, filename: string): void {
     const url = URL.createObjectURL(blob);

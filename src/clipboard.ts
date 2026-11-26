@@ -59,13 +59,18 @@ export async function pasteFromClipboardSystem(): Promise<void> {
 }
 async function insertImageFileAt(file: File, clientX?: number, clientY?: number): Promise<boolean> {
     if (!file || !isImageFile(file)) return false;
+    const projectId = state.projectId;
     try {
         const decoded = await decodeImageFile(file);
         const max = 400;
         let w = decoded.width, h = decoded.height;
         if (w > max || h > max) { const k = max / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k); }
         const assetId = uid('asset');
-        await putAsset(assetId, decoded.dataURL);
+        if (!await putAsset(assetId, decoded.dataURL)) {
+            toast('图片资源保存失败，请检查浏览器存储权限后重试', 'error');
+            return false;
+        }
+        if (projectId !== state.projectId) { toast('项目已切换，已取消图片导入', 'error'); return false; }
         const el = buildElement('image', 0, 0);
         el.w = w; el.h = h;
         el.image = makeImage({ assetId, originalAssetId: assetId });

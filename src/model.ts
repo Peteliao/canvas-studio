@@ -5,7 +5,7 @@ import {
     VECTOR_SHAPE_TYPES, VECTOR_SHAPE_PRESETS
 } from './constants';
 import type {
-    Fill, Stroke, StrokeGradient, Shadow, TextStyle, TextRun, LineSpec, Curve, CurveNode, ImageRef,
+    Fill, Stroke, StrokeGradient, Shadow, TextStyle, TextRun, LineSpec, Curve, CurveNode,
     CanvasElement, Guide, Model, ElementType, StrokeStyle, StrokeAlign,
     TextSizeMode, CurveNodeType, FontWeight, Point, Box
 } from './types';
@@ -13,6 +13,9 @@ import { state, nodeMap } from './state';
 import { sanitizeShapeParams } from './shapes';
 import { dbAvailable } from './db';
 import { clamp, finite, normalizeStops, validColor, round2, round3, uid } from './utils';
+import { makeImage } from './image-ref';
+
+export { makeImage } from './image-ref';
 
 const enumOf = <T extends string | number>(list: T[], v: unknown, d: T): T => (list.includes(v as T) ? (v as T) : d);
 const asRecord = (raw: unknown): Record<string, unknown> => (raw && typeof raw === 'object' ? raw as Record<string, unknown> : {});
@@ -248,16 +251,6 @@ export function lineDashArray(ln: LineSpec): string {
     if (ln.style === 'dashed') return `${ln.width * 3} ${ln.width * 2}`;
     if (ln.style === 'dotted') return `0.1 ${ln.width * 1.8}`;
     return '';
-}
-export function makeImage(raw: unknown): ImageRef | null {
-    if (!raw || typeof raw !== 'object') return null;
-    const o = raw as Record<string, unknown>;
-    if (typeof o.assetId !== 'string' || !o.assetId) return null;
-    return {
-        assetId: o.assetId.slice(0, 120),
-        originalAssetId: typeof o.originalAssetId === 'string' ? o.originalAssetId.slice(0, 120) : o.assetId.slice(0, 120),
-        crop: null
-    };
 }
 export function validateElement(raw: unknown): CanvasElement {
     if (!raw || typeof raw !== 'object') throw new Error('元素数据不是对象');
