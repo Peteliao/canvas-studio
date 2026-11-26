@@ -9,6 +9,8 @@ import { findMatchingProject, projectContentSignature, remapProjectAssets } from
 import { indexSnapTargets, nearestPointSnap, nearestPointSnapIndexed } from '../src/snappoints';
 import type { SnapPoint } from '../src/types';
 import { pinchViewport } from '../src/touch';
+import { elementLocalToWorld, getAABB } from '../src/geometry';
+import { canvasMarginsFor, measurementBounds, measurementOutline, measurementPoints, neighborGapsFor } from '../src/measure-geometry';
 
 const box = { left: 10, top: 20, right: 110, bottom: 70, w: 100, h: 50 };
 const element = (extra: Record<string, unknown> = {}): CanvasElement => ({
@@ -17,6 +19,86 @@ const element = (extra: Record<string, unknown> = {}): CanvasElement => ({
     shadow: { enabled: false, x: 0, y: 0, blur: 0 },
     ...extra
 } as CanvasElement);
+
+describe('rotated shape measurement', () => {
+    const triangle = element({
+        id: 'triangle', type: 'triangle', name: 'Triangle', x: 100, y: 80, w: 120, h: 100,
+        rotation: 60, skewX: 0, skewY: 0, pivotX: 0.5, pivotY: 0.5, shapeParams: {}, visible: true
+    });
+
+    it('anchors a rotated triangle to its three vertices instead of its selection box', () => {
+        const outline = measurementOutline(triangle);
+        expect(outline.points).toHaveLength(3);
+        expect(outline.points[0].x).toBeCloseTo(203.30127019);
+        expect(outline.points[0].y).toBeCloseTo(105);
+        expect(outline.points[1].x).toBeCloseTo(86.69872981);
+        expect(outline.points[1].y).toBeCloseTo(103.03847577);
+        expect(outline.points[2].x).toBeCloseTo(146.69872981);
+        expect(outline.points[2].y).toBeCloseTo(206.96152423);
+        expect(outline.bounds).toMatchObject({ left: 86.69872981077808, right: 203.30127018922192 });
+        expect(getAABB(triangle).w).toBeGreaterThan(outline.bounds.w);
+        expect(getAABB(triangle).h).toBeGreaterThan(outline.bounds.h);
+        expect(getAABB(triangle).right).not.toBeCloseTo(outline.bounds.right);
+    });
+
+    it('measures canvas margins from actual vertices and preserves their anchor points', () => {
+        const outline = measurementOutline(triangle);
+        const margins = canvasMarginsFor(outline, 400, 300);
+        expect(margins.map(m => [m.side, m.value])).toEqual([
+            ['left', 86.69872981077808], ['right', 400 - 203.30127018922192], ['top', outline.bounds.top], ['bottom', 300 - outline.bounds.bottom]
+        ]);
+        expect(margins[0].point.x).toBeCloseTo(86.69872981);
+        expect(margins[0].point.y).toBeCloseTo(103.03847577);
+        expect(margins[1].point.x).toBeCloseTo(203.30127019);
+        expect(margins[1].point.y).toBeCloseTo(105);
+        expect(margins[2].point.x).toBeCloseTo(86.69872981);
+        expect(margins[2].point.y).toBeCloseTo(103.03847577);
+        expect(margins[3].point.x).toBeCloseTo(146.69872981);
+        expect(margins[3].point.y).toBeCloseTo(206.96152423);
+        expect(margins.every(m => outline.points.includes(m.point))).toBe(true);
+    });
+
+    it('measures neighboring gaps from both outlines and extends from their extreme vertices', () => {
+        const bounds = measurementBounds([triangle])!;
+        const neighbors = [
+            element({ id: 'left', x: 30, y: 90, w: 50, h: 50, visible: true }),
+            element({ id: 'right', x: 230, y: 90, w: 50, h: 50, visible: true }),
+            element({ id: 'top', x: 130, y: 20, w: 50, h: 50, visible: true }),
+            element({ id: 'bottom', x: 130, y: 220, w: 50, h: 50, visible: true })
+        ];
+        const gaps = Object.fromEntries(neighborGapsFor(bounds, neighbors, ['triangle'], measurementPoints([triangle])).map(g => [g.side, g]));
+        expect(gaps.left.gap).toBeCloseTo(bounds.left - 80);
+        expect(gaps.right.gap).toBeCloseTo(230 - bounds.right);
+        expect(gaps.top.gap).toBeCloseTo(bounds.top - 70);
+        expect(gaps.bottom.gap).toBeCloseTo(220 - bounds.bottom);
+        expect(gaps.left.sourcePoint.x).toBeCloseTo(86.69872981);
+        expect(gaps.left.sourcePoint.y).toBeCloseTo(103.03847577);
+        expect(gaps.left.otherPoint).toEqual({ x: 80, y: 90 });
+        expect(gaps.left.y).toBe(bounds.top);
+        expect(gaps.left.y).not.toBe(gaps.left.otherPoint.y);
+        expect(gaps.right.sourcePoint.x).toBeCloseTo(203.30127019);
+        expect(gaps.right.sourcePoint.y).toBeCloseTo(105);
+        expect(gaps.bottom.sourcePoint.x).toBeCloseTo(146.69872981);
+        expect(gaps.bottom.sourcePoint.y).toBeCloseTo(206.96152423);
+    });
+
+    it('uses custom shape vertices and the same skew, rotation and pivot transform', () => {
+        const shaped = { ...triangle, shapeParams: { apex: 30 }, skewX: 15, skewY: -8, pivotX: 0.25, pivotY: 0.7 };
+        const outline = measurementOutline(shaped);
+        expect(outline.points).toHaveLength(3);
+        expect(outline.points[0]).toEqual(elementLocalToWorld(shaped, shaped.w * 0.3, 0));
+        expect(outline.points[1]).toEqual(elementLocalToWorld(shaped, 0, shaped.h));
+        expect(outline.points[2]).toEqual(elementLocalToWorld(shaped, shaped.w, shaped.h));
+    });
+
+    it('keeps unrotated rectangle measurements unchanged', () => {
+        const rectangle = element({ x: 20, y: 30, w: 100, h: 60, visible: true });
+        expect(measurementBounds([rectangle])).toMatchObject({ left: 20, top: 30, right: 120, bottom: 90 });
+        expect(canvasMarginsFor(measurementOutline(rectangle), 300, 200).map(m => m.value)).toEqual([20, 180, 30, 110]);
+        const gap = neighborGapsFor(measurementBounds([rectangle])!, [element({ id: 'near', x: 150, y: 40, w: 20, h: 20, visible: true })], ['rectangle'])[0];
+        expect(gap).toMatchObject({ side: 'right', gap: 30, sourcePoint: { x: 120, y: 30 }, otherPoint: { x: 150, y: 40 } });
+    });
+});
 
 describe('image metadata', () => {
     it('preserves valid non-destructive crop rectangles', () => {

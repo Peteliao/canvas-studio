@@ -6,6 +6,10 @@ import { toggleSelectionLock } from './selection';
 import { lineHeightFor } from './style';
 import { syncElement } from './render';
 import { getAABB, pivotWorld, rotatorWorld, selectionAABB } from './geometry';
+import {
+    canvasMarginsFor, measurementBounds, measurementOutline, measurementPoints,
+    neighborGapsFor, type GapMeasure, type MeasureLine, type MeasureSide as Side
+} from './measure-geometry';
 import { commit, scheduleCommit } from './history';
 import { moveSelected, updateGeo } from './elements';
 import { applyGuideDistance, applyObjectGuideDistance, currentGuide, guideSegPath, nearestGuidesToBox, nearestObjectsToGuide } from './guides';
@@ -13,9 +17,8 @@ import { setSelectionToolsMeasureRefresh, syncSelectionTools } from './selection
 import { refreshRotateMarks, rotateHandleSeedRects } from './rotatemarks';
 import type { AABB, CanvasElement, Guide, Point } from './types';
 
-type Side = 'left' | 'right' | 'top' | 'bottom';
-type MeasureLine = { axis: 'h'; x1: number; x2: number; y: number } | { axis: 'v'; x: number; y1: number; y2: number };
-export type GapMeasure = { side: Side; gap: number; otherId: string } & MeasureLine;
+export { neighborGapsFor };
+export type { GapMeasure };
 export interface AlignMeasure { otherId: string; edge: Side; delta: number; line: MeasureLine; }
 interface MeasureTag { d: HTMLDivElement; cx: number; cy: number; mode: 'center' | 'above'; w?: number; h?: number; }
 interface SeedRect { l: number; r: number; t: number; b: number; }
@@ -215,36 +218,6 @@ function layoutMeasureTags(pending: MeasureTag[], seeds?: SeedRect[], hardSeeds?
 /* -------------------- 相邻物件间距（四向最近邻，玫红色标注） -------------------- */
 const GAP_SIDE_NAME: Record<Side, string> = { left: '左', right: '右', top: '上', bottom: '下' };
 
-export function neighborGapsFor(box: AABB, elements: CanvasElement[], excludeIds: string[]): GapMeasure[] {
-    const best: Partial<Record<Side, GapMeasure>> = {};
-    elements.forEach(o => {
-        if (excludeIds.includes(o.id) || o.visible === false) return;
-        const a = getAABB(o);
-        const oy = Math.min(box.bottom, a.bottom) - Math.max(box.top, a.top);
-        const ox = Math.min(box.right, a.right) - Math.max(box.left, a.left);
-        const put = (side: Side, gap: number, line: MeasureLine) => {
-            const ag = Math.abs(gap), cur = best[side];
-            // 按绝对值取最近邻；同距优先分离侧。负值表示两物件重叠的深度
-            if (!cur || ag < Math.abs(cur.gap) || (ag === Math.abs(cur.gap) && gap > cur.gap)) {
-                best[side] = Object.assign({ side, gap, otherId: o.id }, line);
-            }
-        };
-        // 垂直方向有投影重叠才比较水平间距，反之亦然，避免斜对角误报；
-        // 左右/上下按中心方位分配，因此重叠物件也会得到带符号的相对间距
-        if (oy > 2) {
-            const my = (Math.max(box.top, a.top) + Math.min(box.bottom, a.bottom)) / 2;
-            if (a.cx < box.cx) put('left', box.left - a.right, { axis: 'h', x1: a.right, x2: box.left, y: my });
-            else put('right', a.left - box.right, { axis: 'h', x1: box.right, x2: a.left, y: my });
-        }
-        if (ox > 2) {
-            const mx = (Math.max(box.left, a.left) + Math.min(box.right, a.right)) / 2;
-            if (a.cy < box.cy) put('top', box.top - a.bottom, { axis: 'v', x: mx, y1: a.bottom, y2: box.top });
-            else put('bottom', a.top - box.bottom, { axis: 'v', x: mx, y1: box.bottom, y2: a.top });
-        }
-    });
-    return (['left', 'right', 'top', 'bottom'] as const).map(s => best[s]).filter((g): g is GapMeasure => !!g);
-}
-
 /* -------------------- 边缘对齐差（橙色标注，0=对齐，可编辑） -------------------- */
 const ALIGN_EDGE_NAME: Record<Side, string> = { top: '顶边', bottom: '底边', left: '左边', right: '右边' };
 
@@ -295,9 +268,10 @@ function applyAlignDelta(a: AlignMeasure, v: number): void {
 
 function applyNeighborGap(g: GapMeasure, v: number): void {
     const o = getEl(g.otherId);
-    const b = selectionAABB();
+    const b = measurementBounds(selectedEls());
     if (!o || !b) return;
-    const a = getAABB(o);
+    const a = measurementBounds([o]);
+    if (!a) return;
     if (g.side === 'left') moveSelected(round2(a.right + v - b.left), 0);
     else if (g.side === 'right') moveSelected(round2(a.left - v - b.right), 0);
     else if (g.side === 'top') moveSelected(0, round2(a.bottom + v - b.top));
@@ -320,7 +294,10 @@ export function drawMeasure(): void {
     if (!state.selection.length) return;
     const box = selectionAABB();
     if (!box) return;
+    const measureBox = measurementBounds(selectedEls()) || box;
+    const measurePoints = measurementPoints(selectedEls());
     const single = state.selection.length === 1 ? getEl(state.selection[0]) : null;
+    const singleOutline = single ? measurementOutline(single) : null;
     const locked = !!(single && single.locked);
     // 隔离模式只测量可见的选中物件，避免标注到已隐藏的邻居
     const measuredElements = state.isolating
@@ -473,17 +450,28 @@ export function drawMeasure(): void {
     }
     /* ---- 2. 相邻物件间距（近处才标注，避免远处长线干扰） ---- */
     if (state.settings.measureGap !== false) {
-        const gaps = neighborGapsFor(box, measuredElements, state.selection)
+        const gaps = neighborGapsFor(measureBox, measuredElements, state.selection, measurePoints)
             .filter(g => Math.abs(g.gap) * z <= MEASURE_LIMIT.gap)
             .sort((a, b) => Math.abs(a.gap) - Math.abs(b.gap));
         gaps.forEach(g => {
+            const source = { x: X(g.sourcePoint.x), y: Y(g.sourcePoint.y) };
+            const otherPoint = { x: X(g.otherPoint.x), y: Y(g.otherPoint.y) };
+            const lineY = g.axis === 'h' ? Y(g.y) : 0;
+            const lineX = g.axis === 'v' ? X(g.x) : 0;
             gapLine(g.axis === 'h'
-                ? measureDimH(X(g.x1), X(g.x2), Y(g.y))
-                : measureDimV(X(g.x), Y(g.y1), Y(g.y2)));
+                ? measureDimH(X(g.x1), X(g.x2), lineY)
+                : measureDimV(lineX, Y(g.y1), Y(g.y2)));
+            if (g.axis === 'h') {
+                if (Math.abs(source.y - lineY) > 0.5) gapLine(`M ${round2(source.x)} ${round2(source.y)} V ${round2(lineY)}`);
+                if (Math.abs(otherPoint.y - lineY) > 0.5) gapLine(`M ${round2(otherPoint.x)} ${round2(otherPoint.y)} V ${round2(lineY)}`);
+            } else {
+                if (Math.abs(source.x - lineX) > 0.5) gapLine(`M ${round2(source.x)} ${round2(source.y)} H ${round2(lineX)}`);
+                if (Math.abs(otherPoint.x - lineX) > 0.5) gapLine(`M ${round2(otherPoint.x)} ${round2(otherPoint.y)} H ${round2(lineX)}`);
+            }
             const ax = g.axis === 'h' ? (X(g.x1) + X(g.x2)) / 2 : X(g.x);
             const ay = g.axis === 'h' ? Y(g.y) : (Y(g.y1) + Y(g.y2)) / 2;
-            const other = getEl(g.otherId);
-            const nm = other ? other.name : '相邻物件';
+            const otherEl = getEl(g.otherId);
+            const nm = otherEl ? otherEl.name : '相邻物件';
             const title = `与「${nm}」的${GAP_SIDE_NAME[g.side]}侧间距` + (g.gap < 0 ? '（负值表示重叠）' : '') + '：点击数值可直接修改';
             addTag('gap', d => {
                 tagKey(d, GAP_ARROW[g.side]);
@@ -529,34 +517,36 @@ export function drawMeasure(): void {
     }
 
     /* ---- 5. 画布边距（远距离用短引线，避免横穿整幅画布） ---- */
-    if (state.settings.measureCanvas !== false && single) {
+    if (state.settings.measureCanvas !== false && single && singleOutline) {
         const moveBy = (dx: number, dy: number) => moveSelected(round2(dx), round2(dy));
-        const spec = [
-            { k: '左', v: box.left, dir: 'left', label: '左边距',
-              apply: (v: number) => moveBy(v - selectionAABB()!.left, 0) },
-            { k: '右', v: cw - box.right, dir: 'right', label: '右边距',
-              apply: (v: number) => moveBy((cw - v) - selectionAABB()!.right, 0) },
-            { k: '上', v: box.top, dir: 'top', label: '上边距',
-              apply: (v: number) => moveBy(0, v - selectionAABB()!.top) },
-            { k: '下', v: ch - box.bottom, dir: 'bottom', label: '下边距',
-              apply: (v: number) => moveBy(0, (ch - v) - selectionAABB()!.bottom) }
-        ].filter(m => m.v > 0.4);
-        const nearest = spec.slice().sort((a, b) => a.v - b.v).slice(0, 2);
+        const spec = canvasMarginsFor(singleOutline, cw, ch).map(m => ({
+            ...m,
+            label: { left: '左边距', right: '右边距', top: '上边距', bottom: '下边距' }[m.side],
+            apply: (v: number) => {
+                const b = measurementBounds([single]);
+                if (!b) return;
+                if (m.side === 'left') moveBy(v - b.left, 0);
+                else if (m.side === 'right') moveBy((cw - v) - b.right, 0);
+                else if (m.side === 'top') moveBy(0, v - b.top);
+                else moveBy(0, (ch - v) - b.bottom);
+            }
+        })).filter(m => m.value > 0.4);
+        const nearest = spec.slice().sort((a, b) => a.value - b.value).slice(0, 2);
         spec.forEach(m => {
-            const near = m.v * z <= MEASURE_LIMIT.margin;
+            const near = m.value * z <= MEASURE_LIMIT.margin;
             if (!near && nearest.indexOf(m) < 0) return;
-            const len = near ? m.v : Math.min(56 / z, m.v * 0.85);
+            const len = near ? m.value : Math.min(56 / z, m.value * 0.85);
             let p1: Point, p2: Point;
-            if (m.dir === 'left') { p1 = { x: box.left - len, y: box.cy }; p2 = { x: box.left, y: box.cy }; }
-            else if (m.dir === 'right') { p1 = { x: box.right, y: box.cy }; p2 = { x: box.right + len, y: box.cy }; }
-            else if (m.dir === 'top') { p1 = { x: box.cx, y: box.top - len }; p2 = { x: box.cx, y: box.top }; }
-            else { p1 = { x: box.cx, y: box.bottom }; p2 = { x: box.cx, y: box.bottom + len }; }
+            if (m.side === 'left') { p1 = { x: m.point.x - len, y: m.point.y }; p2 = m.point; }
+            else if (m.side === 'right') { p1 = m.point; p2 = { x: m.point.x + len, y: m.point.y }; }
+            else if (m.side === 'top') { p1 = { x: m.point.x, y: m.point.y - len }; p2 = m.point; }
+            else { p1 = m.point; p2 = { x: m.point.x, y: m.point.y + len }; }
             const x1 = X(p1.x), x2 = X(p2.x), y1 = Y(p1.y), y2 = Y(p2.y);
-            if (m.dir === 'left' || m.dir === 'right') marginLine(measureDimH(x1, x2, y1, 3));
+            if (m.side === 'left' || m.side === 'right') marginLine(measureDimH(x1, x2, y1, 3));
             else marginLine(measureDimV(x1, y1, y2, 3));
             addTag('margin', d => {
-                tagKey(d, m.k);
-                tagVal(d, m.v, m.apply, m.label);
+                tagKey(d, { left: '左', right: '右', top: '上', bottom: '下' }[m.side]);
+                tagVal(d, m.value, m.apply, m.label);
             }, round2((x1 + x2) / 2), round2((y1 + y2) / 2),
                 { mode: 'above', title: m.label + '（到画布边缘）：点击数值可直接修改' });
         });
