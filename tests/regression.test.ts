@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { flushAssetSet } from '../src/asset-storage';
 import { exportInkPadding, padExportBounds, rasterExportScale, unionExportBounds } from '../src/export-bounds';
 import { makeImage } from '../src/image-ref';
+import { flattenPsdLayers, psdBlendMode } from '../src/imageimport';
+import type { Layer } from 'ag-psd';
 import type { CanvasElement, Model } from '../src/types';
 import { findMatchingProject, projectContentSignature, remapProjectAssets } from '../src/project-binding';
+import { indexSnapTargets, nearestPointSnap, nearestPointSnapIndexed } from '../src/snappoints';
+import type { SnapPoint } from '../src/types';
 import { pinchViewport } from '../src/touch';
 
 const box = { left: 10, top: 20, right: 110, bottom: 70, w: 100, h: 50 };
@@ -23,6 +27,36 @@ describe('image metadata', () => {
     it('drops invalid crop rectangles without rejecting the image', () => {
         expect(makeImage({ assetId: 'img', crop: { x: 0, y: 0, w: 0, h: 20 } })?.crop).toBeNull();
         expect(makeImage({ assetId: 'img', crop: { x: NaN, y: 0, w: 20, h: 20 } })?.crop).toBeNull();
+    });
+});
+
+describe('PSD layer metadata', () => {
+    it('preserves hierarchy, inherited visibility and opacity, bounds and order', () => {
+        const children: Layer[] = [
+            {
+                name: 'Hidden group', hidden: true, opacity: 0.5,
+                children: [{ name: 'Child', opacity: 0.5, left: -10, top: 4, right: 30, bottom: 44 }]
+            },
+            { name: 'Visible', left: 5, top: 6, right: 45, bottom: 56, blendMode: 'multiply' }
+        ];
+        const result = flattenPsdLayers(children);
+        expect(result.groupCount).toBe(1);
+        expect(result.truncated).toBe(false);
+        expect(result.layers.map(layer => layer.name)).toEqual(['Hidden group / Child', 'Visible']);
+        expect(result.layers[0]).toMatchObject({ left: -10, top: 4, width: 40, height: 40, visible: false, opacity: 0.25 });
+        expect(result.layers[0].groupKey).toBe('g:0');
+        expect(result.layers[1].groupKey).toBeNull();
+        expect(psdBlendMode(children[1].blendMode)).toBe('multiply');
+    });
+
+    it('flags layer limits and maps unsupported blend modes safely', () => {
+        const children: Layer[] = Array.from({ length: 3 }, (_, i) => ({
+            name: `Layer ${i}`, left: 0, top: 0, right: 10, bottom: 10
+        }));
+        expect(flattenPsdLayers(children, 2)).toMatchObject({ truncated: true });
+        expect(flattenPsdLayers(children.slice(0, 2), 2).truncated).toBe(false);
+        expect(psdBlendMode('color burn')).toBe('normal');
+        expect(psdBlendMode(undefined)).toBe('normal');
     });
 });
 
@@ -138,6 +172,28 @@ describe('asset durability', () => {
         release(true);
         expect(await pending).toBe(false);
         expect(dirty.has('a')).toBe(true);
+    });
+});
+
+describe('snap point index', () => {
+    it('matches exhaustive nearest-point search including tie priority', () => {
+        const targets: SnapPoint[] = [
+            { x: 10, y: 10, kind: 'center', label: 'a' },
+            { x: 14, y: 10, kind: 'center', label: 'b' },
+            { x: 10, y: 10, kind: 'center', label: 'c' },
+            { x: 80, y: 80, kind: 'center', label: 'far' },
+            { x: -20, y: 4, kind: 'center', label: 'edge' }
+        ];
+        const sources: SnapPoint[] = [
+            { x: 0, y: 0, kind: 'endpoint', label: 's1' },
+            { x: 4, y: 6, kind: 'endpoint', label: 's2' }
+        ];
+        const index = indexSnapTargets(targets);
+        for (const [mx, my, threshold] of [[0, 0, 8], [6, 4, 8], [70, 70, 20], [-10, 0, 8], [500, 500, 8]]) {
+            expect(nearestPointSnapIndexed(sources, index, mx, my, threshold))
+                .toEqual(nearestPointSnap(sources, targets, mx, my, threshold));
+        }
+        expect(targets.map(t => t.label)).toEqual(['a', 'b', 'c', 'far', 'edge']);
     });
 });
 

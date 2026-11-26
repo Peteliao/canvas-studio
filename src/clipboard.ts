@@ -3,9 +3,9 @@ import { VERSION } from './constants';
 import type { CanvasElement } from './types';
 import { state } from './state';
 import { $, toast, uid, deepCopy, round2 } from './utils';
-import { decodeImageFile, isImageFile, isPsdFile } from './imageimport';
-import { validateElement, selectedEls, nextZIndex, buildElement, makeText, makeImage } from './model';
-import { putAsset } from './db';
+import { decodeImageFile, isImageFile } from './imageimport';
+import { insertDecodedImage } from './image';
+import { validateElement, selectedEls, nextZIndex, buildElement, makeText } from './model';
 import { renderAll } from './render';
 import { setSelection } from './selection';
 import { commit } from './history';
@@ -62,26 +62,8 @@ async function insertImageFileAt(file: File, clientX?: number, clientY?: number)
     const projectId = state.projectId;
     try {
         const decoded = await decodeImageFile(file);
-        const max = 400;
-        let w = decoded.width, h = decoded.height;
-        if (w > max || h > max) { const k = max / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k); }
-        const assetId = uid('asset');
-        if (!await putAsset(assetId, decoded.dataURL)) {
-            toast('图片资源保存失败，请检查浏览器存储权限后重试', 'error');
-            return false;
-        }
         if (projectId !== state.projectId) { toast('项目已切换，已取消图片导入', 'error'); return false; }
-        const el = buildElement('image', 0, 0);
-        el.w = w; el.h = h;
-        el.image = makeImage({ assetId, originalAssetId: assetId });
-        el.name = file.name.slice(0, 60);
-        const world = clientX === undefined ? canvasCenterFor(w, h) : clientToWorld(clientX, clientY!);
-        el.x = round2(world.x - (clientX === undefined ? w / 2 : 0));
-        el.y = round2(world.y - (clientX === undefined ? h / 2 : 0));
-        state.model.elements.push(el);
-        renderAll(); setSelection([el.id]); commit();
-        toast(isPsdFile(file) ? 'PSD 合成图已导入（图层合并为图片）' : '图片已导入，双击可裁剪', 'success');
-        return true;
+        return await insertDecodedImage(file.name, decoded, clientX, clientY);
     } catch (err) { toast('图片导入失败：' + (err as Error).message, 'error'); return false; }
 }
 function insertTextAt(text: string, clientX?: number, clientY?: number): void {

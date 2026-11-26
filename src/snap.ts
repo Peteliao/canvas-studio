@@ -3,17 +3,25 @@ import { $, $opt } from './utils';
 import { getEl } from './model';
 import { getAABB, selectionAABB } from './geometry';
 import { guideAxis } from './guides';
-import { collectSnapPoints, nearestPointSnap, selectionSnapPoints, SNAP_POINT_PX } from './snappoints';
+import { collectSnapPoints, indexSnapTargets, nearestPointSnapIndexed, selectionSnapPoints, SNAP_POINT_PX } from './snappoints';
+import type { SnapTargetIndex } from './snappoints';
 import type { Interaction, SnapLine, SnapPoint } from './types';
 
 type DragInteraction = Extract<Interaction, { kind: 'drag' }>;
-const dragSnapCache = new WeakMap<DragInteraction, { sources: SnapPoint[]; targets: SnapPoint[] }>();
+interface DragSnapData {
+    sources: SnapPoint[];
+    targetIndex: SnapTargetIndex;
+    axes: { xs: number[]; ys: number[] };
+}
+const dragSnapCache = new WeakMap<DragInteraction, DragSnapData>();
 
-function snapDataFor(it: DragInteraction): { sources: SnapPoint[]; targets: SnapPoint[] } {
+function snapDataFor(it: DragInteraction): DragSnapData {
     let data = dragSnapCache.get(it);
     if (!data) {
         const ids = new Set(it.items.map(o => o.id));
-        data = { sources: selectionSnapPoints(it.items), targets: collectSnapPoints(ids) };
+        const sources = selectionSnapPoints(it.items);
+        const targets = collectSnapPoints(ids);
+        data = { sources, targetIndex: indexSnapTargets(targets), axes: snapCandidates(ids) };
         dragSnapCache.set(it, data);
     }
     return data;
@@ -41,10 +49,9 @@ export function applyDragSnap(it: DragInteraction, mx: number, my: number): { mx
         ? { ...it.anchor, x: it.anchor.x + mx, y: it.anchor.y + my }
         : null;
     if (!state.settings.snap) return { mx, my, guides: [], point: null, anchor: anchorSource || undefined };
-    const ids = new Set(it.items.map(o => o.id));
-    const { sources, targets } = snapDataFor(it);
+    const { sources, targetIndex, axes } = snapDataFor(it);
     // Ctrl + 手柄拖动：把被抓住的角点 / 边中点作为唯一吸附源，优先精确落到特征点
-    const pointSnap = nearestPointSnap(it.anchor ? [it.anchor] : sources, targets, mx, my, SNAP_POINT_PX / state.zoom);
+    const pointSnap = nearestPointSnapIndexed(it.anchor ? [it.anchor] : sources, targetIndex, mx, my, SNAP_POINT_PX / state.zoom);
     if (pointSnap) {
         const ax = mx + pointSnap.dx, ay = my + pointSnap.dy;
         return {
@@ -52,7 +59,7 @@ export function applyDragSnap(it: DragInteraction, mx: number, my: number): { mx
             anchor: it.anchor ? { ...it.anchor, x: it.anchor.x + ax, y: it.anchor.y + ay } : undefined
         };
     }
-    const { xs, ys } = snapCandidates(ids);
+    const { xs, ys } = axes;
     const start = it.startBox || (it.startBox = selectionAABB());
     if (!start) return { mx, my, guides: [], point: null, anchor: anchorSource || undefined };
     const cur = { left: start.left + mx, right: start.right + mx, cx: start.cx + mx,

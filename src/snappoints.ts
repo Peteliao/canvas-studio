@@ -148,3 +148,52 @@ export function nearestPointSnap(sources: SnapPoint[], targets: SnapPoint[], mx:
     });
     return best;
 }
+
+export interface IndexedSnapTarget { point: SnapPoint; order: number; }
+export interface SnapTargetIndex { targets: IndexedSnapTarget[]; }
+
+export function indexSnapTargets(targets: readonly SnapPoint[]): SnapTargetIndex {
+    return {
+        targets: targets.map((point, order) => ({ point, order })).sort((a, b) => a.point.x - b.point.x || a.order - b.order)
+    };
+}
+
+function lowerBoundX(targets: readonly IndexedSnapTarget[], x: number): number {
+    let low = 0, high = targets.length;
+    while (low < high) {
+        const mid = (low + high) >>> 1;
+        if (targets[mid].point.x < x) low = mid + 1;
+        else high = mid;
+    }
+    return low;
+}
+
+export function nearestPointSnapIndexed(
+    sources: readonly SnapPoint[],
+    index: SnapTargetIndex,
+    mx: number,
+    my: number,
+    threshold: number
+): PointSnapResult | null {
+    let best: PointSnapResult | null = null, bestD = threshold * threshold;
+    for (const s of sources) {
+        const sx = s.x + mx, sy = s.y + my;
+        const start = lowerBoundX(index.targets, sx - threshold);
+        let sourceBest: { result: PointSnapResult; d: number; order: number } | null = null;
+        for (let i = start; i < index.targets.length; i++) {
+            const entry = index.targets[i], t = entry.point;
+            if (t.x > sx + threshold) break;
+            const dx = t.x - sx, dy = t.y - sy;
+            const d = dx * dx + dy * dy;
+            if (d > threshold * threshold) continue;
+            if (!sourceBest || d < sourceBest.d || (d === sourceBest.d && entry.order > sourceBest.order)) {
+                sourceBest = { result: { target: t, dx, dy }, d, order: entry.order };
+            }
+        }
+        if (sourceBest && sourceBest.d <= bestD) {
+            bestD = sourceBest.d;
+            best = sourceBest.result;
+        }
+    }
+    return best;
+}

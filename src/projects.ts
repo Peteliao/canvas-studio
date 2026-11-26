@@ -4,11 +4,12 @@ import { state } from './state';
 import { $, uid, iconEl, toast, appPrompt, appConfirm } from './utils';
 import { storeAll, storePut, storeDelete, saveSettings } from './db';
 import { defaultModel, snapshotJSON, validateProject } from './model';
-import { applySnapshot, resetHistoryWithSave } from './history';
+import { applySnapshot, commit, resetHistoryWithSave } from './history';
 import { renderAll, syncCanvasSize } from './render';
 import { syncBackgroundControls, updateUI } from './panel';
 import { resetView } from './view';
 import { refreshStudioUI } from './tools';
+import { finishTextEdit } from './richtext';
 import { findMatchingProject, projectContentSignature } from './project-binding';
 import type { Settings } from './types';
 
@@ -198,18 +199,41 @@ export async function createVersion(): Promise<void> {
     renderVersionList(); toast('版本快照已创建', 'success');
 }
 export async function restoreVersion(id: string, name: string): Promise<void> {
-    const ok = await appConfirm(`确定恢复到「${name}」吗？当前画布内容会被替换（可用撤销前的自动保存备份）。`, { title: '恢复版本' });
+    const ok = await appConfirm(`确定恢复到「${name}」吗？系统会先自动备份当前内容；恢复后仍可撤销。`, { title: '恢复版本' });
     if (!ok) return;
+    if (state.isTextEditing) finishTextEdit();
+    commit();
     await ensureProjectId();
+    const projectId = state.projectId;
+    if (!projectId) return;
     if (!await persistCurrentProject()) return;
+    const before = snapshotJSON();
     const items = await storeAll<VersionRecord>(DB_VERSIONS);
     const v = items.find(x => x.id === id); if (!v) { toast('版本不存在', 'error'); return; }
     try { validateProject(JSON.parse(v.data)); }
     catch { toast('版本数据已损坏，无法恢复', 'error'); return; }
-    applySnapshot(v.data);
-    resetHistoryWithSave();
+    if (state.projectId !== projectId || snapshotJSON() !== before) {
+        toast('恢复已取消：项目在载入期间发生变化，请重新操作', 'error');
+        return;
+    }
+    if (before === v.data) { toast('当前内容与该版本一致，无需恢复', 'success'); return; }
+    const backup: VersionRecord = {
+        id: uid('ver'), projectId, name: `恢复前自动备份 · ${name}`.slice(0, 80),
+        created: Date.now(), data: before
+    };
+    if (!await storePut(DB_VERSIONS, backup)) {
+        toast('恢复前自动备份保存失败，已取消恢复；请检查浏览器存储权限', 'error');
+        return;
+    }
+    if (state.projectId !== projectId || snapshotJSON() !== before) {
+        toast('恢复已取消：项目在备份期间发生变化，请重新操作', 'error');
+        return;
+    }
+    if (!applySnapshot(v.data)) return;
+    commit();
     if (!await persistCurrentProject()) return;
-    toast('已恢复版本：' + name, 'success');
+    await renderProjectPanels();
+    toast(`已恢复版本：${name}（可用撤销返回恢复前）`, 'success');
 }
 export async function deleteVersion(id: string): Promise<void> {
     const ok = await appConfirm('确定删除这个版本快照吗？', { title: '删除版本' });

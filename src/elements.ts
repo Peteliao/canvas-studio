@@ -4,7 +4,7 @@ import { state } from './state';
 import { $, clamp, deepCopy, finite, round2, toast, uid } from './utils';
 import { buildElement, getEl, nextZIndex, selectedEls, validateElement } from './model';
 import { lineHeightFor } from './style';
-import { renderAll, syncCanvasSize, syncElement, updateTextStats } from './render';
+import { renderAll, syncCanvasSize, syncElement, syncElementTransform, syncElementsTransform, updateTextStats } from './render';
 import { commit, scheduleCommit } from './history';
 import { canvasCenterFor } from './view';
 import { selectionAABB, setPivot } from './geometry';
@@ -92,7 +92,8 @@ export function centerOnCanvas(): void {
     if (!box) return;
     const dx = (state.model.canvas.w - box.w) / 2 - box.left;
     const dy = (state.model.canvas.h - box.h) / 2 - box.top;
-    els.forEach(e => { e.x = round2(e.x + dx); e.y = round2(e.y + dy); syncElement(e.id); });
+    els.forEach(e => { e.x = round2(e.x + dx); e.y = round2(e.y + dy); });
+    syncElementsTransform(els.map(e => e.id));
     if (els.length === 1) syncGeoInputs(els[0]);
     commit();
 }
@@ -122,7 +123,8 @@ export function updateGeo(type: 'x' | 'y' | 'w' | 'h' | 'r'): void {
         $<HTMLSelectElement>('textSizeMode').value = 'fixed';
     }
     if (el.type === 'text') updateTextStats(el);
-    syncElement(el.id);
+    if (type === 'w' || type === 'h') syncElement(el.id);
+    else syncElementTransform(el.id);
     drawMeasure();
     scheduleCommit();
 }
@@ -134,7 +136,7 @@ export function updatePivotInput(axis: 'x' | 'y'): void {
     const v = finite($<HTMLInputElement>(axis === 'x' ? 'pivotXInput' : 'pivotYInput').value, 50);
     if (axis === 'x') setPivot(el, v / 100, el.pivotY, true);
     else setPivot(el, el.pivotX, v / 100, true);
-    syncElement(el.id);
+    syncElementTransform(el.id);
     syncGeoInputs(el);
     drawMeasure();
     scheduleCommit();
@@ -145,7 +147,7 @@ export function resetPivot(): void {
     if (!els.length) return;
     els.forEach(el => {
         setPivot(el, 0.5, 0.5, true);
-        syncElement(el.id);
+        syncElementTransform(el.id);
     });
     if (els.length === 1) syncGeoInputs(els[0]);
     drawMeasure();
@@ -156,7 +158,8 @@ export function resetPivot(): void {
 export function moveSelected(dx: number, dy: number): void {
     const els = selectedEls().filter(e => !e.locked);
     if (!els.length) return;
-    els.forEach(e => { e.x = round2(e.x + dx); e.y = round2(e.y + dy); syncElement(e.id); });
+    els.forEach(e => { e.x = round2(e.x + dx); e.y = round2(e.y + dy); });
+    syncElementsTransform(els.map(e => e.id));
     if (els.length === 1) syncGeoInputs(els[0]);
     drawMeasure();
     scheduleCommit(160);

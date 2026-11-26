@@ -5,7 +5,7 @@ import { state, nodeMap } from './state';
 import { $, clamp, round2, round3, toast } from './utils';
 import { getEl, selectedEls, sortedElements, buildElement, makeLine, makeCurve, curveSegPts, cubicAt, splitCubic, curveNodeHasIn, curveNodeHasOut, curveLocalBox, curveNodesBox, curveFillOn } from './model';
 import { lineHeightFor } from './style';
-import { syncElement, renderAll, applySelectionClasses, syncTransform } from './render';
+import { syncElement, syncElementTransform, syncElementsTransform, renderAll, applySelectionClasses, syncTransform } from './render';
 import { commit } from './history';
 import { viewportRect, setZoom, showFitFloat } from './view';
 import { getAABB, pivotWorld, selectionAABB, setPivot, elementLocalToWorld, elementWorldToLocal } from './geometry';
@@ -809,8 +809,8 @@ function onPointerMove(e: PointerEvent | null): void {
         it.items.forEach(o => {
             const el = getEl(o.id); if (!el) return;
             el.x = round2(o.x + mx); el.y = round2(o.y + my);
-            syncElement(el.id);
         });
+        syncElementsTransform(it.items.map(o => o.id));
         if (it.items.length === 1) syncGeoInputs(getEl(it.items[0].id));
         drawMeasure();
         return;
@@ -874,8 +874,8 @@ function onPointerMove(e: PointerEvent | null): void {
             el.x = round2(nx - o.pivotX * o.w);
             el.y = round2(ny - o.pivotY * hh);
             el.rotation = round2(o.rotation + delta);
-            syncElement(el.id);
         });
+        syncElementsTransform(it.items.map(o => o.id));
         if (it.items.length === 1) syncGeoInputs(getEl(it.items[0].id));
         const singleEl = it.single ? getEl(it.items[0].id) : null;
         const shown = singleEl ? singleEl.rotation : delta;
@@ -896,7 +896,7 @@ function onPointerMove(e: PointerEvent | null): void {
                 const sign = it.dir === 'n' ? -1 : 1;
                 const angle = Math.atan2(sign * localDx, Math.max(1, o.h / 2)) * 180 / Math.PI;
                 el.skewX = round2(clamp(o.skewX + angle, -85, 85));
-                syncElement(el.id);
+                syncElementTransform(el.id);
                 showSkewTooltip(e.clientX, e.clientY, 'X', el.skewX);
             } else {
                 const k = (it.dir === 'n' ? 1 : -1) * dx / Math.max(1, it.box.h / 2);
@@ -906,8 +906,8 @@ function onPointerMove(e: PointerEvent | null): void {
                     const hh = el.type === 'line' ? lineHeightFor(el) : el.h;
                     el.x = round2(o.x + k * (it.box.cy - (o.y + o.pivotY * hh)));
                     el.skewX = round2(clamp(o.skewX + angle, -85, 85));
-                    syncElement(el.id);
                 });
+                syncElementsTransform(it.items.map(o => o.id));
                 showSkewTooltip(e.clientX, e.clientY, 'X', angle);
             }
         } else {
@@ -919,7 +919,7 @@ function onPointerMove(e: PointerEvent | null): void {
                 const sign = it.dir === 'e' ? 1 : -1;
                 const angle = Math.atan2(sign * localDy, Math.max(1, o.w / 2)) * 180 / Math.PI;
                 el.skewY = round2(clamp(o.skewY + angle, -85, 85));
-                syncElement(el.id);
+                syncElementTransform(el.id);
                 showSkewTooltip(e.clientX, e.clientY, 'Y', el.skewY);
             } else {
                 const k = (it.dir === 'e' ? 1 : -1) * dy / Math.max(1, it.box.w / 2);
@@ -928,8 +928,8 @@ function onPointerMove(e: PointerEvent | null): void {
                     const el = getEl(o.id); if (!el) return;
                     el.y = round2(o.y + k * ((o.x + o.pivotX * o.w) - it.box.cx));
                     el.skewY = round2(clamp(o.skewY + angle, -85, 85));
-                    syncElement(el.id);
                 });
+                syncElementsTransform(it.items.map(o => o.id));
                 showSkewTooltip(e.clientX, e.clientY, 'Y', angle);
             }
         }
@@ -953,7 +953,7 @@ function onPointerMove(e: PointerEvent | null): void {
             if (Math.abs(fy - a) * it.h < thr) fy = a;
         });
         setPivot(el, fx, fy, true);
-        syncElement(el.id);
+        syncElementTransform(el.id);
         syncGeoInputs(el);
         drawMeasure();
         return;

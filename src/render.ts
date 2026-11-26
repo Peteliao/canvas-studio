@@ -184,7 +184,7 @@ export function updateTextStats(el: CanvasElement | null): void {
     const mode = modeNames[t.sizeMode] || '固定尺寸';
     n.textContent = `${chars} 字符 · ${lines} 行 · ${mode}`;
 }
-export function syncNode(el: CanvasElement, d: HTMLDivElement): void {
+export function syncNodeTransform(el: CanvasElement, d: HTMLDivElement): void {
     const s = d.style;
     const renderH = el.type === 'line' ? lineHeightFor(el) : el.h;
     s.left = el.x + 'px';
@@ -213,7 +213,11 @@ export function syncNode(el: CanvasElement, d: HTMLDivElement): void {
         pivot.classList.toggle('custom', Math.abs(el.pivotX - 0.5) > 0.001 || Math.abs(el.pivotY - 0.5) > 0.001);
         d.classList.toggle('pivot-custom', Math.abs(el.pivotX - 0.5) > 0.001 || Math.abs(el.pivotY - 0.5) > 0.001);
     }
+}
 
+export function syncNode(el: CanvasElement, d: HTMLDivElement): void {
+    syncNodeTransform(el, d);
+    const renderH = el.type === 'line' ? lineHeightFor(el) : el.h;
     const shape = d.querySelector<HTMLElement>('.shape-layer');
     if (!shape) return;
     const ss = shape.style;
@@ -406,6 +410,20 @@ export function syncElement(id: string): void {
     const el = getEl(id), d = nodeMap.get(id);
     if (el && d) syncNode(el, d);
     else renderAll();
+    scheduleAlignHighlight();
+    refreshRotateMarks();
+}
+export function syncElementTransform(id: string): void {
+    syncElementsTransform([id]);
+}
+export function syncElementsTransform(ids: readonly string[]): void {
+    let complete = true;
+    for (const id of ids) {
+        const el = getEl(id), d = nodeMap.get(id);
+        if (el && d) syncNodeTransform(el, d);
+        else complete = false;
+    }
+    if (!complete) { renderAll(); return; }
     scheduleAlignHighlight();
     refreshRotateMarks();
 }

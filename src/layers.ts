@@ -1,7 +1,7 @@
 import { state } from './state';
 import { $, round2, toast } from './utils';
 import { getEl, selectedEls, sortedElements } from './model';
-import { renderAll, applySelectionClasses, syncElement } from './render';
+import { renderAll, applySelectionClasses, syncElementsTransform } from './render';
 import { commit } from './history';
 import { getAABB, normalizeZFromOrder } from './geometry';
 import type { AABB } from './types';
@@ -31,8 +31,8 @@ export function alignElements(type: string): void {
         else if (type === 'top') el.y = round2(el.y + (a.top - b.top));
         else if (type === 'bottom') el.y = round2(el.y + (a.bottom - b.bottom));
         else if (type === 'middle') el.y = round2(el.y + (a.cy - b.cy));
-        syncElement(el.id);
     });
+    syncElementsTransform(els.filter(el => el !== anchor).map(el => el.id));
     commit();
 }
 
@@ -53,9 +53,9 @@ export function distributeElements(axis: 'h' | 'v'): void {
         const delta = cursor - i.a[key];
         if (axis === 'h') i.el.x = round2(i.el.x + delta);
         else i.el.y = round2(i.el.y + delta);
-        syncElement(i.el.id);
         cursor += i.a[sizeKey] + gap;
     });
+    syncElementsTransform(items.map(i => i.el.id));
     commit();
 }
 

@@ -129,7 +129,7 @@ export function resetHistory(): void {
     historyIndex = 0;
     resetLinkSnapshots();
 }
-/** 新建/切换项目、恢复版本后重置历史栈并立即自动保存 */
+/** 新建/切换项目后重置历史栈并立即自动保存 */
 export function resetHistoryWithSave(): void {
     resetHistory();
     saveAuto(undoStack[0]);
